@@ -245,7 +245,7 @@ impl GpuRenderer {
             pass.draw(0..mesh.vertices.len() as u32, 0..1);
         }
         self.queue.submit([encoder.finish()]);
-        frame.present();
+        self.queue.present(frame);
         Ok(())
     }
 
