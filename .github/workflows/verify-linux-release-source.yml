@@ -1,0 +1,80 @@
+name: Проверка исходников Linux-релиза
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-source-archive:
+    name: Собрать приложение из архива релиза
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Получить проверочный сценарий
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Настроить Rust для WebAssembly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Настроить пути Rust
+        run: |
+          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Найти последний опубликованный релиз
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Не найден релиз с ожидаемым номером сборки.\n' >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Проверяется исходный архив релиза $version."
+      - name: Скачать исходный tar.gz релиза
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${RELEASE_VERSION}.tar.gz" \
+            --output "$RUNNER_TEMP/release-source.tar.gz"
+          tar -tzf "$RUNNER_TEMP/release-source.tar.gz" >/dev/null
+      - name: Распаковать исходный архив
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-source"
+          tar -xzf "$RUNNER_TEMP/release-source.tar.gz" \
+            --strip-components=1 \
+            -C "$RUNNER_TEMP/release-source"
+          test -f "$RUNNER_TEMP/release-source/Cargo.toml"
+          test -f "$RUNNER_TEMP/release-source/scripts/build-linux-packages.sh"
+      - name: Установить инструменты Linux-сборки
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cpio rpm
+          cargo install --locked wasm-pack --version 0.13.1
+      - name: Проверить и собрать Linux-пакеты из архива
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        working-directory: ${{ runner.temp }}/release-source
+        run: |
+          cargo test --locked
+          bash scripts/build-linux-packages.sh
+          deb="$(find generated-artifacts/linux -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          rpm="$(find generated-artifacts/linux -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          test -n "$deb" && test -n "$rpm"
+          test "$(dpkg-deb --field "$deb" Version)" = "$PACKAGE_VERSION"
+          test "$(rpm -qp --queryformat '%{VERSION}' "$rpm")" = "$PACKAGE_VERSION"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "rpm=$rpm" >> "$GITHUB_OUTPUT"
+        id: build
+      - name: Запустить сервер из DEB и RPM
+        run: |
+          bash "$GITHUB_WORKSPACE/scripts/test-linux-package.sh" \
+            "$RUNNER_TEMP/release-source/${{ steps.build.outputs.deb }}" \
+            "$RUNNER_TEMP/release-source/${{ steps.build.outputs.rpm }}"
