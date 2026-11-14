@@ -74,7 +74,7 @@ jobs:
       - name: Установить инструменты упаковки
         run: |
           sudo apt-get update
-          sudo apt-get install --yes rpm zip
+          sudo apt-get install --yes rpm
           cargo install --locked cargo-apk
           cargo install --locked wasm-pack --version 0.13.1
       - name: Собрать Android APK
@@ -96,10 +96,6 @@ jobs:
           rpm -qp --info "$rpm"
           cp "$deb" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.deb"
           cp "$rpm" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.rpm"
-      - name: Собрать Web-пакет
-        run: |
-          (cd artifacts/north-seas-adventure/dist/public && \
-            zip -qr "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-web.zip" .)
       - name: Настроить GitHub Pages
         uses: actions/configure-pages@v5
       - name: Подготовить сайт для GitHub Pages
@@ -133,7 +129,6 @@ jobs:
           Идентификаторы сборок:
           - \`$RELEASE_BASE-android\` — APK для Android.
           - \`$RELEASE_BASE-linux\` — пакеты DEB и RPM для Linux.
-          - \`$RELEASE_BASE-web\` — WebAssembly-версия для GitHub Pages.
           EOF
 
           existing_state="$(gh release view "$RELEASE_BASE" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
