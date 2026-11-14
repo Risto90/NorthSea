@@ -89,6 +89,26 @@ pub(crate) enum BrowserApiPreference {
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+impl BrowserApiPreference {
+    pub(crate) fn as_storage_value(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::WebGpu => "webgpu",
+            Self::WebGl => "webgl",
+        }
+    }
+
+    pub(crate) fn from_storage_value(value: &str) -> Option<Self> {
+        match value.trim() {
+            "automatic" => Some(Self::Automatic),
+            "webgpu" => Some(Self::WebGpu),
+            "webgl" => Some(Self::WebGl),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BrowserGraphicsApi {
     WebGpu,
@@ -1523,6 +1543,22 @@ mod tests {
             browser_api_attempts(BrowserApiPreference::WebGl),
             [BrowserGraphicsApi::WebGl]
         );
+    }
+
+    #[test]
+    fn browser_graphics_preference_storage_values_round_trip() {
+        for (preference, value) in [
+            (BrowserApiPreference::Automatic, "automatic"),
+            (BrowserApiPreference::WebGpu, "webgpu"),
+            (BrowserApiPreference::WebGl, "webgl"),
+        ] {
+            assert_eq!(preference.as_storage_value(), value);
+            assert_eq!(
+                BrowserApiPreference::from_storage_value(value),
+                Some(preference)
+            );
+        }
+        assert_eq!(BrowserApiPreference::from_storage_value("unknown"), None);
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]

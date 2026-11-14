@@ -127,7 +127,7 @@ body {
 
 .hud-settings-button {
   position: absolute;
-  z-index: 7;
+  z-index: 10;
   top: calc(20px + env(safe-area-inset-top));
   right: calc(20px + env(safe-area-inset-right));
   width: 42px;
@@ -140,9 +140,9 @@ body {
   background: rgba(93, 67, 43, .9);
 }
 
-.keyboard-settings {
+.game-settings {
   position: absolute;
-  z-index: 9;
+  z-index: 11;
   top: calc(72px + env(safe-area-inset-top));
   right: calc(20px + env(safe-area-inset-right));
   width: min(330px, calc(100vw - 32px));
@@ -172,6 +172,43 @@ body {
   margin: 0;
   font-size: 18px;
   font-weight: 500;
+}
+
+.settings-section + .settings-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(214, 195, 160, .2);
+}
+
+.settings-section h3 {
+  margin: 0 0 8px;
+  color: #d7c7a7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.graphics-api-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.graphics-api-choice {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid rgba(219, 197, 156, .3);
+  border-radius: 3px;
+  background: rgba(8, 19, 22, .8);
+  color: #e6dcc7;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graphics-api-choice[aria-pressed="true"] {
+  border-color: #d8bd8b;
+  background: rgba(99, 77, 48, .55);
+  color: #f0d8aa;
 }
 
 .settings-close {
@@ -219,6 +256,7 @@ body {
 .hud-settings-button:focus-visible,
 .settings-close:focus-visible,
 .binding-key:focus-visible,
+.graphics-api-choice:focus-visible,
 .bindings-reset:focus-visible {
   outline: 2px solid #e1c18d;
   outline-offset: 3px;
@@ -238,7 +276,7 @@ body {
     height: 36px;
   }
 
-  .keyboard-settings {
+  .game-settings {
     top: calc(52px + env(safe-area-inset-top));
     max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     padding: 10px;

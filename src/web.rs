@@ -16,6 +16,7 @@ use crate::{
 };
 
 const STORAGE_KEY: &str = "north-seas-adventure.keyboard-bindings.v1";
+const GRAPHICS_API_STORAGE_KEY: &str = "north-seas-adventure.graphics-api.v1";
 
 #[derive(Clone, Copy)]
 struct Action {
@@ -179,11 +180,12 @@ pub fn start() -> Result<(), JsValue> {
         let mut state = state.borrow_mut();
         state.mobile = mobile;
         state.bindings = load_bindings(&window);
+        state.api_preference = load_browser_api_preference(&window);
     });
     crate::set_mobile_controls(mobile);
 
     root.set_inner_html(&application_markup(mobile));
-    render_keyboard_settings(&document);
+    render_game_settings(&document);
     install_handlers(&window, &document)?;
     resize_scene(&window, &document);
     let canvas = document
@@ -282,18 +284,16 @@ fn is_mobile(navigator: &Navigator) -> bool {
 }
 
 fn application_markup(mobile: bool) -> String {
-    let settings_hidden = if mobile { " hidden" } else { "" };
     format!(
         r#"<main class="game-shell" data-device="{}">
 <section class="game-stage" aria-label="Игровая сцена">
 <div id="game-scene" class="game-canvas" role="application" aria-label="Игровая сцена" tabindex="0"><canvas id="game-canvas" aria-label="Игровая сцена"></canvas></div>
 <div id="loading" class="stage-overlay" role="status"><div class="load-mark"></div><h2>Поднимаем парус</h2><p>Загружается игровая сцена…</p></div>
 </section>
-<button id="settings-button" class="hud-settings-button" type="button" data-ui-action="toggle-settings" aria-label="Настройки клавиатуры" aria-expanded="false"{}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></button>
-<section id="keyboard-settings" class="keyboard-settings" aria-label="Настройки клавиатуры" hidden></section>
+<button id="settings-button" class="hud-settings-button" type="button" data-ui-action="toggle-settings" aria-label="Настройки" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></button>
+<section id="game-settings" class="game-settings" aria-label="Настройки игры" hidden></section>
 </main>"#,
-        if mobile { "mobile" } else { "desktop" },
-        settings_hidden
+        if mobile { "mobile" } else { "desktop" }
     )
 }
 
@@ -347,26 +347,37 @@ fn hide_loading(document: &Document) {
     }
 }
 
+fn show_graphics_loading(document: &Document) {
+    if let Some(loading) = document_element(document, "loading") {
+        let _ = loading.set_attribute("class", "stage-overlay");
+        let _ = loading.remove_attribute("hidden");
+        loading.set_inner_html(
+            r#"<div class="load-mark"></div><h2>Поднимаем парус</h2><p>Загружается игровая сцена…</p>"#,
+        );
+    }
+}
+
 fn show_graphics_error(document: &Document, details: &str) {
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
         loading.set_text_content(Some(&format!(
-            "Не удалось запустить игру. WebGPU и WebGL не предоставили работающий графический адаптер. {details}"
+            "Не удалось запустить игру с выбранным графическим API. {details}"
         )));
     }
 }
 
-fn render_keyboard_settings(document: &Document) {
-    let Some(panel) = document_element(document, "keyboard-settings") else {
+fn render_game_settings(document: &Document) {
+    let Some(panel) = document_element(document, "game-settings") else {
         return;
     };
-    let (open, listening, bindings, mobile) = WEB_STATE.with(|state| {
+    let (open, listening, bindings, mobile, api_preference) = WEB_STATE.with(|state| {
         let state = state.borrow();
         (
             state.settings_open,
             state.listening_action,
             state.bindings.clone(),
             state.mobile,
+            state.api_preference,
         )
     });
     let rows = ACTIONS
@@ -389,11 +400,34 @@ fn render_keyboard_settings(document: &Document) {
             )
         })
         .collect::<String>();
+    let api_options = [
+        (BrowserApiPreference::Automatic, "Автоматически"),
+        (BrowserApiPreference::WebGpu, "WebGPU"),
+        (BrowserApiPreference::WebGl, "WebGL"),
+    ]
+    .into_iter()
+    .map(|(preference, label)| {
+        let pressed = preference == api_preference;
+        format!(
+            r#"<button class="graphics-api-choice" type="button" data-ui-action="select-browser-api" data-browser-api="{}" aria-pressed="{}">{}</button>"#,
+            preference.as_storage_value(),
+            pressed,
+            label
+        )
+    })
+    .collect::<String>();
+    let keyboard_settings = if mobile {
+        String::new()
+    } else {
+        format!(
+            r#"<section class="settings-section" aria-label="Настройки клавиатуры"><h3>Клавиатура</h3><div class="binding-list">{rows}</div><button class="bindings-reset" type="button" data-ui-action="reset-bindings">Сбросить привязки</button></section>"#
+        )
+    };
     panel.set_inner_html(&format!(
-        r#"<div class="settings-heading"><h2>Клавиатура</h2><button class="settings-close" type="button" data-ui-action="close-settings" aria-label="Закрыть">×</button></div><div class="binding-list">{rows}</div><button class="bindings-reset" type="button" data-ui-action="reset-bindings">Сбросить привязки</button>"#
+        r#"<div class="settings-heading"><h2>Настройки</h2><button class="settings-close" type="button" data-ui-action="close-settings" aria-label="Закрыть">×</button></div><section class="settings-section" aria-label="Настройки графики"><h3>Графический API</h3><div class="graphics-api-options" role="group" aria-label="Выбор графического API">{api_options}</div></section>{keyboard_settings}"#
     ));
     let settings_button = document_element(document, "settings-button");
-    if open && !mobile {
+    if open {
         let _ = panel.remove_attribute("hidden");
         if let Some(button) = settings_button {
             let _ = button.set_attribute("aria-expanded", "true");
@@ -471,6 +505,34 @@ fn save_bindings(window: &Window, bindings: &[String]) {
     {
         let _ = storage.set_item(STORAGE_KEY, &serialized);
     }
+}
+
+fn load_browser_api_preference(window: &Window) -> BrowserApiPreference {
+    let Ok(Some(storage)) = window.local_storage() else {
+        return BrowserApiPreference::Automatic;
+    };
+    let Ok(Some(value)) = storage.get_item(GRAPHICS_API_STORAGE_KEY) else {
+        return BrowserApiPreference::Automatic;
+    };
+    BrowserApiPreference::from_storage_value(&value).unwrap_or_else(|| {
+        web_sys::console::error_1(&JsValue::from_str(
+            "В сохранённых настройках указан неизвестный графический API; используется автоматический режим.",
+        ));
+        BrowserApiPreference::Automatic
+    })
+}
+
+fn save_browser_api_preference(
+    window: &Window,
+    preference: BrowserApiPreference,
+) -> Result<(), String> {
+    let storage = window
+        .local_storage()
+        .map_err(|error| format!("Не удалось открыть локальное хранилище: {error:?}"))?
+        .ok_or_else(|| "Браузер не предоставил локальное хранилище.".to_owned())?;
+    storage
+        .set_item(GRAPHICS_API_STORAGE_KEY, preference.as_storage_value())
+        .map_err(|error| format!("Не удалось сохранить графический API: {error:?}"))
 }
 
 fn listen(
@@ -590,7 +652,7 @@ fn handle_click(event: Event) {
         "toggle-settings" => {
             WEB_STATE.with(|state| {
                 let mut state = state.borrow_mut();
-                state.settings_open = !state.settings_open && !state.mobile;
+                state.settings_open = !state.settings_open;
                 if state.settings_open {
                     state.pressed_steering.clear();
                 }
@@ -599,7 +661,7 @@ fn handle_click(event: Event) {
             if close {
                 crate::rudder_input(0.0);
             }
-            render_keyboard_settings(&document);
+            render_game_settings(&document);
         }
         "close-settings" => {
             WEB_STATE.with(|state| {
@@ -607,7 +669,14 @@ fn handle_click(event: Event) {
                 state.settings_open = false;
                 state.listening_action = None;
             });
-            render_keyboard_settings(&document);
+            render_game_settings(&document);
+        }
+        "select-browser-api" => {
+            if let Some(value) = button.get_attribute("data-browser-api")
+                && let Some(preference) = BrowserApiPreference::from_storage_value(&value)
+            {
+                select_browser_api(window, document, preference);
+            }
         }
         "reset-bindings" => {
             let bindings = ACTIONS
@@ -616,18 +685,64 @@ fn handle_click(event: Event) {
                 .collect::<Vec<_>>();
             WEB_STATE.with(|state| state.borrow_mut().bindings = bindings.clone());
             save_bindings(&window, &bindings);
-            render_keyboard_settings(&document);
+            render_game_settings(&document);
         }
         "bind" => {
             if let Some(id) = button.get_attribute("data-bind-action")
                 && let Some(index) = ACTIONS.iter().position(|action| action.id == id)
             {
                 WEB_STATE.with(|state| state.borrow_mut().listening_action = Some(index));
-                render_keyboard_settings(&document);
+                render_game_settings(&document);
             }
         }
         _ => {}
     }
+}
+
+fn select_browser_api(window: Window, document: Document, preference: BrowserApiPreference) {
+    let changed = WEB_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.api_preference == preference {
+            false
+        } else {
+            state.api_preference = preference;
+            true
+        }
+    });
+    if !changed {
+        return;
+    }
+
+    if let Err(error) = save_browser_api_preference(&window, preference) {
+        web_sys::console::error_1(&JsValue::from_str(&error));
+    }
+    render_game_settings(&document);
+    BROWSER_RENDERER.with(|renderer| {
+        renderer.borrow_mut().take();
+    });
+
+    let canvas = match replace_game_canvas(&document) {
+        Ok(canvas) => canvas,
+        Err(error) => {
+            show_graphics_error(&document, &error);
+            return;
+        }
+    };
+    show_graphics_loading(&document);
+    let renderer_document = document.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        match initialize_browser_renderer(&renderer_document, canvas, preference).await {
+            Ok(renderer) => {
+                BROWSER_RENDERER.with(|current| current.replace(Some(renderer)));
+                resize_scene(&window, &renderer_document);
+                hide_loading(&renderer_document);
+            }
+            Err(error) => {
+                show_graphics_error(&renderer_document, &error);
+                web_sys::console::error_1(&JsValue::from_str(&error));
+            }
+        }
+    });
 }
 
 fn handle_key_down(event: &KeyboardEvent) {
@@ -645,7 +760,7 @@ fn handle_key_down(event: &KeyboardEvent) {
             update_binding(index, &key);
         }
         if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-            render_keyboard_settings(&document);
+            render_game_settings(&document);
         }
         return;
     }
