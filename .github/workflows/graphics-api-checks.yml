@@ -1,0 +1,54 @@
+name: Проверка графических API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - .github/workflows/graphics-api-checks.yml
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - .github/workflows/graphics-api-checks.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-and-native-api-tests:
+    name: Rust и графические API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Установить Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Установить Xvfb и программные графические драйверы
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libgl1-mesa-dri \
+            libvulkan1 \
+            libx11-dev \
+            mesa-vulkan-drivers \
+            xauth \
+            xvfb
+
+      - name: Запустить Rust-тесты
+        run: cargo test --locked --lib
+
+      - name: Проверить прямой Vulkan и WebGPU в Xvfb
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: |
+          test -f "$VK_ICD_FILENAMES"
+          xvfb-run --auto-servernum cargo test --locked --lib \
+            native_graphics_api_smoke_test -- --ignored --nocapture

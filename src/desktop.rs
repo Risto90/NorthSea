@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XlibDisplayHandle, XlibWindowHandle};
 
 use crate::{
-    CameraState, NativeSettingsAction, build_scene_mesh, native_renderer::NativeRenderer,
-    native_settings::NativeSettings,
+    CameraState, GraphicsApiPreference, NativeSettingsAction, build_scene_mesh,
+    native_renderer::NativeRenderer, native_settings::NativeSettings,
 };
 
 type Display = c_void;
@@ -498,5 +498,40 @@ fn key_name(symbol: c_ulong) -> Option<&'static str> {
         0x66 | 0x46 => Some("f"),
         0x72 | 0x52 => Some("r"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "Требуются X-сервер и доступные программные Vulkan/WebGPU-драйверы."]
+    fn native_graphics_api_smoke_test() {
+        let window = XWindow::new().expect("создание X11-окна для проверки API");
+        let mesh = build_scene_mesh(CameraState::default()).expect("сетка сцены");
+
+        for preference in [GraphicsApiPreference::WebGpu, GraphicsApiPreference::Vulkan] {
+            let mut renderer = NativeRenderer::new_with_preference(
+                Some(window.raw_display_handle()),
+                window.raw_window_handle(),
+                window.width,
+                window.height,
+                preference,
+            )
+            .unwrap_or_else(|error| panic!("режим {preference:?} недоступен: {error}"));
+            match preference {
+                GraphicsApiPreference::WebGpu => {
+                    assert!(matches!(&renderer, NativeRenderer::WebGpu(_)));
+                }
+                GraphicsApiPreference::Vulkan => {
+                    assert!(matches!(&renderer, NativeRenderer::Vulkan(_)));
+                }
+                GraphicsApiPreference::Automatic => unreachable!(),
+            }
+            renderer
+                .render(&mesh, window.width, window.height)
+                .unwrap_or_else(|error| panic!("отрисовка в режиме {preference:?}: {error}"));
+        }
     }
 }
