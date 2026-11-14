@@ -45,6 +45,10 @@ pub(crate) struct GpuRenderer {
     configuration: wgpu::SurfaceConfiguration,
     #[cfg(not(target_arch = "wasm32"))]
     renderer_name: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    adapter_vendor_id: u32,
+    #[cfg(not(target_arch = "wasm32"))]
+    adapter_name: String,
 }
 
 impl GpuRenderer {
@@ -65,7 +69,7 @@ impl GpuRenderer {
         window: raw_window_handle::RawWindowHandle,
     ) -> Result<Self, String> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = wgpu::Backends::GL;
+        descriptor.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
         descriptor.display = Some(Box::new(NativeDisplayHandle(display.ok_or_else(|| {
             "Для WebGPU необходим дескриптор нативного дисплея.".to_owned()
         })?)));
@@ -218,6 +222,10 @@ impl GpuRenderer {
             configuration,
             #[cfg(not(target_arch = "wasm32"))]
             renderer_name: format!("WebGPU: {} ({:?})", adapter_info.name, adapter_info.backend),
+            #[cfg(not(target_arch = "wasm32"))]
+            adapter_vendor_id: adapter_info.vendor,
+            #[cfg(not(target_arch = "wasm32"))]
+            adapter_name: adapter_info.name.clone(),
         })
     }
 
@@ -321,6 +329,16 @@ impl GpuRenderer {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn renderer_name(&self) -> &str {
         &self.renderer_name
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn adapter_vendor_id(&self) -> u32 {
+        self.adapter_vendor_id
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn adapter_name(&self) -> &str {
+        &self.adapter_name
     }
 }
 

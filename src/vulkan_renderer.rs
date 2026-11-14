@@ -31,10 +31,11 @@ impl VulkanRenderer {
         window: RawWindowHandle,
         width: u32,
         height: u32,
+        preferred_model_key: Option<&str>,
     ) -> Result<Self, String> {
         let instance = VulkanInstance::new(display, window)?;
         let (physical_device, queue_family_index, renderer_name) =
-            instance.select_physical_device()?;
+            instance.select_physical_device(preferred_model_key)?;
         let priorities = [1.0_f32];
         let queue_info = [vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family_index)
@@ -149,7 +150,10 @@ impl VulkanInstance {
         &self.instance
     }
 
-    fn select_physical_device(&self) -> Result<(vk::PhysicalDevice, u32, String), String> {
+    fn select_physical_device(
+        &self,
+        preferred_model_key: Option<&str>,
+    ) -> Result<(vk::PhysicalDevice, u32, String), String> {
         let physical_devices = unsafe { self.instance.enumerate_physical_devices() }
             .map_err(|error| format!("Не удалось перечислить Vulkan-устройства: {error:?}"))?;
         let swapchain_name = ash::khr::swapchain::NAME;
@@ -160,6 +164,14 @@ impl VulkanInstance {
                 self.instance
                     .get_physical_device_properties(physical_device)
             };
+            let name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
+                .to_string_lossy()
+                .into_owned();
+            if preferred_model_key
+                .is_some_and(|model_key| !vulkan_device_matches_model_key(&name, model_key))
+            {
+                continue;
+            }
             let extension_properties = unsafe {
                 self.instance
                     .enumerate_device_extension_properties(physical_device)
@@ -211,9 +223,6 @@ impl VulkanInstance {
                     continue;
                 }
 
-                let name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
-                    .to_string_lossy()
-                    .into_owned();
                 let score = match properties.device_type {
                     vk::PhysicalDeviceType::DISCRETE_GPU => 4,
                     vk::PhysicalDeviceType::INTEGRATED_GPU => 3,
@@ -231,9 +240,33 @@ impl VulkanInstance {
             .max_by_key(|candidate| candidate.0)
             .map(|(_, physical_device, queue_family, name)| (physical_device, queue_family, name))
             .ok_or_else(|| {
-                "Не найдено Vulkan-устройство с поддержкой графики, окна и swapchain.".to_owned()
+                preferred_model_key.map_or_else(
+                    || {
+                        "Не найдено Vulkan-устройство с поддержкой графики, окна и swapchain."
+                            .to_owned()
+                    },
+                    |model_key| {
+                        format!(
+                            "Vulkan не обнаружил модель {model_key}, выбранную по данным WebGPU."
+                        )
+                    },
+                )
             })
     }
+}
+
+fn vulkan_device_matches_model_key(device_name: &str, model_key: &str) -> bool {
+    let compact_name = device_name
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect::<String>();
+    compact_name.find(model_key).is_some_and(|start| {
+        compact_name
+            .as_bytes()
+            .get(start + model_key.len())
+            .is_none_or(|character| !character.is_ascii_digit())
+    })
 }
 
 impl Drop for VulkanInstance {
@@ -1196,5 +1229,25 @@ mod tests {
                 height: 100,
             }
         );
+    }
+
+    #[test]
+    fn preferred_vulkan_device_must_match_the_detected_model() {
+        assert!(vulkan_device_matches_model_key(
+            "AMD Radeon RX 580 (RADV POLARIS10)",
+            "rx580"
+        ));
+        assert!(vulkan_device_matches_model_key(
+            "AMD Radeon RX Vega 64",
+            "rxvega64"
+        ));
+        assert!(!vulkan_device_matches_model_key(
+            "AMD Radeon RX 5700 XT",
+            "rx580"
+        ));
+        assert!(!vulkan_device_matches_model_key(
+            "AMD Radeon RX 5800",
+            "rx580"
+        ));
     }
 }
