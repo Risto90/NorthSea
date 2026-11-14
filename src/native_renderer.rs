@@ -76,6 +76,24 @@ pub(crate) enum NativeRenderer {
 }
 
 impl NativeRenderer {
+    pub(crate) fn new_diagnostic(
+        display: Option<RawDisplayHandle>,
+        window: RawWindowHandle,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
+        match GpuRenderer::new_native_webgpu(display, window) {
+            Ok(renderer) => Ok(Self::WebGpu(renderer)),
+            Err(webgpu_error) => VulkanRenderer::new(display, window, width, height, None)
+                .map(Self::Vulkan)
+                .map_err(|vulkan_error| {
+                    format!(
+                        "Не удалось вывести сообщение об ошибке. WebGPU: {webgpu_error} Vulkan: {vulkan_error}"
+                    )
+                }),
+        }
+    }
+
     pub(crate) fn new_with_preference(
         display: Option<RawDisplayHandle>,
         window: RawWindowHandle,

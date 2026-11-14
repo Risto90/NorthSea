@@ -44,6 +44,23 @@ impl AndroidRenderer {
         Ok(Self { renderer, window })
     }
 
+    fn new_diagnostic(window: NativeWindow) -> Result<Self, String> {
+        let handle = window
+            .window_handle()
+            .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
+        let renderer = NativeRenderer::new_diagnostic(
+            Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
+            handle.as_raw(),
+            window.width().max(1) as u32,
+            window.height().max(1) as u32,
+        )?;
+        eprintln!(
+            "Игровой режим API не запущен; диагностический экран: {}",
+            renderer.renderer_name()
+        );
+        Ok(Self { renderer, window })
+    }
+
     fn draw(&mut self, camera: &mut CameraState) -> Result<(), String> {
         let width = self.window.width().max(1) as u32;
         let height = self.window.height().max(1) as u32;
@@ -51,6 +68,38 @@ impl AndroidRenderer {
         camera.viewport_height = height as f32;
         let mesh = build_scene_mesh(*camera)?;
         self.renderer.render(&mesh, width, height)
+    }
+}
+
+fn create_android_renderer(
+    app: &AndroidApp,
+    camera: &mut CameraState,
+    preference: GraphicsApiPreference,
+) -> Option<AndroidRenderer> {
+    let window = app.native_window()?;
+    camera.viewport_width = window.width().max(1) as f32;
+    camera.viewport_height = window.height().max(1) as f32;
+    if camera.api_settings_error {
+        return app.native_window().and_then(|window| {
+            AndroidRenderer::new_diagnostic(window)
+                .map_err(|error| eprintln!("Не удалось создать экран ошибки: {error}"))
+                .ok()
+        });
+    }
+    match AndroidRenderer::new(window, preference) {
+        Ok(renderer) => Some(renderer),
+        Err(error) => {
+            eprintln!(
+                "Выбранный графический API недоступен; игра не запускается через другой API: {error}"
+            );
+            camera.api_settings_error = true;
+            camera.api_settings_open = true;
+            app.native_window().and_then(|window| {
+                AndroidRenderer::new_diagnostic(window)
+                    .map_err(|error| eprintln!("Не удалось создать экран ошибки: {error}"))
+                    .ok()
+            })
+        }
     }
 }
 
@@ -77,15 +126,8 @@ pub fn android_main(app: AndroidApp) {
     while running {
         app.poll_events(Some(Duration::from_millis(16)), |event| match event {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
-                renderer = app.native_window().and_then(|window| {
-                    camera.viewport_width = window.width().max(1) as f32;
-                    camera.viewport_height = window.height().max(1) as f32;
-                    AndroidRenderer::new(window, settings.graphics_api())
-                        .map_err(|error| {
-                            eprintln!("Не удалось создать поверхность Android: {error}");
-                        })
-                        .ok()
-                });
+                let preference = camera.graphics_api_preference;
+                renderer = create_android_renderer(&app, &mut camera, preference);
                 redraw = true;
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => {
@@ -99,11 +141,12 @@ pub fn android_main(app: AndroidApp) {
                         let mut selected_api = None;
                         let received_input = input_events.next(|event| match event {
                             InputEvent::MotionEvent(motion) => {
-                                let previous_api = camera.graphics_api_preference;
-                                if handle_input(motion, &mut camera, &mut touch) {
-                                    if camera.graphics_api_preference != previous_api {
-                                        selected_api = Some(camera.graphics_api_preference);
-                                    }
+                                if handle_input(
+                                    motion,
+                                    &mut camera,
+                                    &mut touch,
+                                    &mut selected_api,
+                                ) {
                                     redraw = true;
                                     InputStatus::Handled
                                 } else {
@@ -116,27 +159,35 @@ pub fn android_main(app: AndroidApp) {
                             break;
                         }
                         if let Some(preference) = selected_api {
-                            let window = app.native_window();
-                            let next_renderer =
-                                window.map(|window| AndroidRenderer::new(window, preference));
+                            let next_renderer = app
+                                .native_window()
+                                .map(|window| AndroidRenderer::new(window, preference));
                             match next_renderer {
                                 Some(Ok(next_renderer)) => {
+                                    renderer = Some(next_renderer);
+                                    camera.api_settings_error = false;
+                                    camera.api_settings_open = false;
                                     match settings.save_graphics_api(preference) {
-                                        Ok(()) => renderer = Some(next_renderer),
-                                        Err(error) => {
-                                            eprintln!("{error}");
-                                            camera.graphics_api_preference =
-                                                settings.graphics_api();
-                                        }
+                                        Ok(()) => {}
+                                        Err(error) => eprintln!("{error}"),
                                     }
                                 }
                                 Some(Err(error)) => {
-                                    eprintln!("{error}");
-                                    camera.graphics_api_preference = settings.graphics_api();
+                                    eprintln!(
+                                        "Выбранный API недоступен; игра приостановлена без автоматического перехода: {error}"
+                                    );
+                                    if let Err(save_error) =
+                                        settings.save_graphics_api(preference)
+                                    {
+                                        eprintln!("{save_error}");
+                                    }
+                                    camera.api_settings_error = true;
+                                    camera.api_settings_open = true;
                                 }
                                 None => {
                                     eprintln!("Не удалось получить Android-окно для смены API.");
-                                    camera.graphics_api_preference = settings.graphics_api();
+                                    camera.api_settings_error = true;
+                                    camera.api_settings_open = true;
                                 }
                             }
                             redraw = true;
@@ -151,7 +202,7 @@ pub fn android_main(app: AndroidApp) {
         let now = Instant::now();
         let elapsed = now.duration_since(last_simulation).as_secs_f32();
         last_simulation = now;
-        if camera.speed > 0 {
+        if !camera.api_settings_error && camera.speed > 0 {
             camera.advance_sailing(elapsed);
             if now.duration_since(last_sailing_draw) >= Duration::from_millis(33) {
                 redraw = true;
@@ -174,6 +225,7 @@ fn handle_input(
     motion: &MotionEvent<'_>,
     camera: &mut CameraState,
     touch: &mut TouchState,
+    selected_api: &mut Option<GraphicsApiPreference>,
 ) -> bool {
     let action = motion.action();
     let count = motion.pointer_count();
@@ -220,12 +272,18 @@ fn handle_input(
                     NativeSettingsAction::TogglePanel => {}
                     NativeSettingsAction::SelectApi(preference) => {
                         camera.graphics_api_preference = preference;
+                        *selected_api = Some(preference);
                     }
                 }
                 return true;
             }
-            if camera.api_settings_open {
+            if camera.api_settings_open && !camera.api_settings_error {
                 camera.api_settings_open = false;
+                touch.previous_position = None;
+                touch.tap_start = None;
+                return true;
+            }
+            if camera.api_settings_error {
                 touch.previous_position = None;
                 touch.tap_start = None;
                 return true;

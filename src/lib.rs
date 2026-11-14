@@ -42,6 +42,8 @@ pub struct CameraState {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub api_settings_open: bool,
     #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub api_settings_error: bool,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub graphics_api_preference: GraphicsApiPreference,
 }
 
@@ -130,6 +132,8 @@ impl CameraState {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             api_settings_open: false,
             #[cfg(any(target_os = "linux", target_os = "android"))]
+            api_settings_error: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             graphics_api_preference: GraphicsApiPreference::Automatic,
         }
     }
@@ -151,7 +155,9 @@ impl CameraState {
         if !self.native_api_settings {
             return None;
         }
-        if native_settings_button_rect(self.viewport_width).contains(x, y) {
+        if !self.api_settings_error
+            && native_settings_button_rect(self.viewport_width).contains(x, y)
+        {
             self.api_settings_open = !self.api_settings_open;
             return Some(NativeSettingsAction::TogglePanel);
         }
@@ -229,11 +235,14 @@ impl CameraState {
                 let native_api_settings = self.native_api_settings;
                 #[cfg(any(target_os = "linux", target_os = "android"))]
                 let graphics_api_preference = self.graphics_api_preference;
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                let api_settings_error = self.api_settings_error;
                 *self = Self::default();
                 #[cfg(any(target_os = "linux", target_os = "android"))]
                 {
                     self.native_api_settings = native_api_settings;
                     self.graphics_api_preference = graphics_api_preference;
+                    self.api_settings_error = api_settings_error;
                 }
             }
             _ => {}
@@ -331,6 +340,14 @@ pub fn render_svg(state: CameraState) -> String {
 <rect width="{width:.0}" height="{height:.0}" fill="url(#sea)"/> "##
     )
     .expect("Не удалось сформировать начало SVG.");
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    if state.api_settings_error {
+        draw_native_api_settings(&mut svg, width, state);
+        draw_native_api_error_banner(&mut svg, width);
+        svg.push_str("</svg>");
+        return svg;
+    }
 
     draw_sea(
         &mut svg,
@@ -568,25 +585,27 @@ fn draw_native_api_settings(svg: &mut String, width: f32, state: CameraState) {
     if !state.native_api_settings {
         return;
     }
-    let button = native_settings_button_rect(width);
-    let center_x = button.x + button.width * 0.5;
-    let center_y = button.y + button.height * 0.5;
-    write!(
-        svg,
-        r##"<g id="native-api-settings-button">
+    if !state.api_settings_error {
+        let button = native_settings_button_rect(width);
+        let center_x = button.x + button.width * 0.5;
+        let center_y = button.y + button.height * 0.5;
+        write!(
+            svg,
+            r##"<g id="native-api-settings-button">
 <circle cx="{center_x:.1}" cy="{center_y:.1}" r="21" fill="#102126" fill-opacity=".94" stroke="#d4bd94" stroke-width="1.4"/>
 <path d="M{cx:.1} {cy_top:.1}v6m0 8v6M{cx_left:.1} {center_y:.1}h6m8 0h6M{diag_a:.1} {diag_b:.1}l4 4m11 11 4 4M{diag_c:.1} {diag_d:.1}l4-4m11-11 4-4" fill="none" stroke="#e1cfaa" stroke-width="1.6" stroke-linecap="round"/>
 <circle cx="{center_x:.1}" cy="{center_y:.1}" r="5" fill="none" stroke="#e1cfaa" stroke-width="1.6"/>
 </g>"##,
-        cx = center_x,
-        cy_top = center_y - 16.0,
-        cx_left = center_x - 16.0,
-        diag_a = center_x - 11.0,
-        diag_b = center_y - 11.0,
-        diag_c = center_x - 11.0,
-        diag_d = center_y + 11.0,
-    )
-    .expect("Не удалось сформировать кнопку настроек графики.");
+            cx = center_x,
+            cy_top = center_y - 16.0,
+            cx_left = center_x - 16.0,
+            diag_a = center_x - 11.0,
+            diag_b = center_y - 11.0,
+            diag_c = center_x - 11.0,
+            diag_d = center_y + 11.0,
+        )
+        .expect("Не удалось сформировать кнопку настроек графики.");
+    }
 
     if !state.api_settings_open {
         return;
@@ -627,6 +646,19 @@ fn draw_native_api_settings(svg: &mut String, width: f32, state: CameraState) {
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
+fn draw_native_api_error_banner(svg: &mut String, width: f32) {
+    let x = (width - 222.0).max(8.0);
+    write!(
+        svg,
+        r##"<g id="native-api-error-banner">
+<rect x="{x:.1}" y="218" width="210" height="30" rx="3" fill="#4a211a" stroke="#d48669" stroke-width="1.2"/>
+</g>"##
+    )
+    .expect("Не удалось сформировать сообщение об ошибке графического API.");
+    draw_pixel_text(svg, x + 8.0, 227.0, 1.45, "API НЕДОСТУПЕН", "#ffe0d3");
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn draw_pixel_text(svg: &mut String, x: f32, y: f32, pixel: f32, text: &str, color: &str) {
     let mut cursor = x;
     for character in text.chars() {
@@ -655,16 +687,22 @@ fn pixel_glyph(character: char) -> [u8; 7] {
         'B' | 'В' => [30, 17, 17, 30, 17, 17, 30],
         'E' => [31, 16, 16, 30, 16, 16, 31],
         'G' => [14, 17, 16, 23, 17, 17, 15],
+        'Д' => [14, 17, 17, 17, 17, 31, 17],
+        'Е' => [31, 16, 16, 30, 16, 16, 31],
+        'Н' => [17, 17, 17, 31, 17, 17, 17],
         'I' => [31, 4, 4, 4, 4, 4, 31],
         'K' => [17, 18, 20, 24, 20, 18, 17],
         'L' => [16, 16, 16, 16, 16, 16, 31],
         'N' => [17, 25, 25, 21, 19, 19, 17],
         'O' | 'О' => [14, 17, 17, 17, 17, 17, 14],
         'P' => [30, 17, 17, 30, 16, 16, 16],
+        'П' => [31, 17, 17, 17, 17, 17, 17],
+        'С' => [14, 17, 16, 16, 16, 17, 14],
         'T' | 'Т' => [31, 4, 4, 4, 4, 4, 4],
         'U' => [17, 17, 17, 17, 17, 17, 14],
         'V' => [17, 17, 17, 17, 17, 10, 4],
         'W' => [17, 17, 17, 21, 21, 21, 10],
+        'У' => [17, 17, 10, 4, 4, 8, 16],
         _ => [0; 7],
     }
 }
@@ -1430,6 +1468,38 @@ mod tests {
             GraphicsApiPreference::Vulkan
         );
         assert!(render_svg(camera).contains("#b29660"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn unavailable_graphics_api_shows_an_error_without_silent_mode_change() {
+        let mut camera = CameraState::default();
+        camera.enable_native_api_settings(true);
+        camera.api_settings_open = true;
+        camera.api_settings_error = true;
+        camera.graphics_api_preference = GraphicsApiPreference::Vulkan;
+        let error_screen = render_svg(camera);
+        assert!(error_screen.contains("id=\"native-api-error-banner\""));
+        assert!(error_screen.contains("id=\"native-api-settings-panel\""));
+        assert!(!error_screen.contains("id=\"ship-seal\""));
+        assert!(!error_screen.contains("id=\"native-api-settings-button\""));
+        assert_eq!(
+            camera.graphics_api_preference,
+            GraphicsApiPreference::Vulkan
+        );
+
+        let panel = native_settings_panel_rect(camera.viewport_width);
+        assert_eq!(
+            camera.native_settings_action_at(panel.x + 20.0, panel.y + 31.0 + 2.0 * 34.0 + 12.0),
+            Some(NativeSettingsAction::SelectApi(
+                GraphicsApiPreference::WebGpu
+            ))
+        );
+        assert_eq!(
+            camera.graphics_api_preference,
+            GraphicsApiPreference::WebGpu
+        );
+        assert!(camera.api_settings_error);
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]

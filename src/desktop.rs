@@ -280,14 +280,37 @@ fn run_inner() -> Result<(), String> {
     let mut camera = CameraState::default();
     camera.enable_native_api_settings(true);
     camera.graphics_api_preference = settings.graphics_api();
-    let mut renderer = NativeRenderer::new_with_preference(
+    let mut renderer = match NativeRenderer::new_with_preference(
         Some(window.raw_display_handle()),
         window.raw_window_handle(),
         window.width,
         window.height,
         settings.graphics_api(),
-    )?;
-    println!("Графический адаптер: {}", renderer.renderer_name());
+    ) {
+        Ok(renderer) => renderer,
+        Err(error) => {
+            eprintln!(
+                "Выбранный графический API недоступен; игра не запускается через другой API: {error}"
+            );
+            camera.api_settings_error = true;
+            camera.api_settings_open = true;
+            NativeRenderer::new_diagnostic(
+                Some(window.raw_display_handle()),
+                window.raw_window_handle(),
+                window.width,
+                window.height,
+            )
+            .map_err(|diagnostic_error| format!("{error} {diagnostic_error}"))?
+        }
+    };
+    if camera.api_settings_error {
+        println!(
+            "Показан экран ошибки; игровой режим API не запущен. Рендерер сообщения: {}",
+            renderer.renderer_name()
+        );
+    } else {
+        println!("Графический адаптер: {}", renderer.renderer_name());
+    }
 
     let mut pressed = HashSet::new();
     let mut steer_left = false;
@@ -307,7 +330,7 @@ fn run_inner() -> Result<(), String> {
                     let mut key = unsafe { event.key };
                     let symbol = unsafe { XLookupKeysym(&mut key, 0) };
                     if symbol == XK_ESCAPE {
-                        if camera.api_settings_open {
+                        if camera.api_settings_open && !camera.api_settings_error {
                             camera.api_settings_open = false;
                             redraw = true;
                         } else {
@@ -351,6 +374,8 @@ fn run_inner() -> Result<(), String> {
                 BUTTON_PRESS => {
                     let button = unsafe { event.button };
                     if button.button == 1 {
+                        let previous_preference = camera.graphics_api_preference;
+                        let was_api_error = camera.api_settings_error;
                         match camera.native_settings_action_at(button.x as f32, button.y as f32) {
                             Some(NativeSettingsAction::TogglePanel) => {
                                 mouse_position = None;
@@ -358,8 +383,7 @@ fn run_inner() -> Result<(), String> {
                             }
                             Some(NativeSettingsAction::SelectApi(preference)) => {
                                 mouse_position = None;
-                                let previous_preference = settings.graphics_api();
-                                if preference != previous_preference {
+                                if preference != previous_preference || was_api_error {
                                     match NativeRenderer::new_with_preference(
                                         Some(window.raw_display_handle()),
                                         window.raw_window_handle(),
@@ -368,9 +392,11 @@ fn run_inner() -> Result<(), String> {
                                         preference,
                                     ) {
                                         Ok(next_renderer) => {
+                                            renderer = next_renderer;
+                                            camera.api_settings_error = false;
+                                            camera.api_settings_open = false;
                                             match settings.save_graphics_api(preference) {
                                                 Ok(()) => {
-                                                    renderer = next_renderer;
                                                     println!(
                                                         "Выбран графический API: {}",
                                                         renderer.renderer_name()
@@ -378,14 +404,20 @@ fn run_inner() -> Result<(), String> {
                                                 }
                                                 Err(error) => {
                                                     eprintln!("{error}");
-                                                    camera.graphics_api_preference =
-                                                        previous_preference;
                                                 }
                                             }
                                         }
                                         Err(error) => {
-                                            eprintln!("{error}");
-                                            camera.graphics_api_preference = previous_preference;
+                                            eprintln!(
+                                                "Выбранный API недоступен; игровой режим остановлен, автоматического перехода не было: {error}"
+                                            );
+                                            if let Err(save_error) =
+                                                settings.save_graphics_api(preference)
+                                            {
+                                                eprintln!("{save_error}");
+                                            }
+                                            camera.api_settings_error = true;
+                                            camera.api_settings_open = true;
                                         }
                                     }
                                 }
@@ -438,7 +470,7 @@ fn run_inner() -> Result<(), String> {
         let now = Instant::now();
         let elapsed = (now - previous_frame).as_secs_f32().min(0.1);
         previous_frame = now;
-        if camera.advance_sailing(elapsed) {
+        if !camera.api_settings_error && camera.advance_sailing(elapsed) {
             redraw = true;
         }
         if redraw {
