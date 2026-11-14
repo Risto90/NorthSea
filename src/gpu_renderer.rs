@@ -60,6 +60,7 @@ impl GpuRenderer {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .map_err(|error| format!("Не найден графический адаптер: {error}"))?;
@@ -193,18 +194,20 @@ impl GpuRenderer {
         self.resize(surface_width, surface_height);
 
         let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Outdated => {
                 self.surface.configure(&self.device, &self.configuration);
-                self.surface
-                    .get_current_texture()
-                    .map_err(|error| format!("Не удалось получить кадр Vulkan/WebGPU: {error:?}"))?
+                match self.surface.get_current_texture() {
+                    wgpu::CurrentSurfaceTexture::Success(frame)
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                    other => return Err(format!("Не удалось получить кадр Vulkan/WebGPU: {other:?}")),
+                }
             }
-            Err(error) => {
-                return Err(format!(
-                    "Не удалось получить кадр Vulkan/WebGPU: {error:?}"
-                ));
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(());
             }
+            other => return Err(format!("Не удалось получить кадр Vulkan/WebGPU: {other:?}")),
         };
         let view = frame
             .texture
