@@ -1,0 +1,108 @@
+name: Сборка пакетов
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-tests:
+    name: Тесты Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v7
+      - name: Настроить Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Запустить тесты
+        run: cargo test --locked
+
+  android-apk:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v7
+      - name: Настроить Rust для Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Настроить пути Rust
+        run: |
+          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Установить Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Настроить Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ""
+      - name: Установить Android SDK и NDK
+        run: |
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Установить cargo-apk
+        run: cargo install --locked cargo-apk
+      - name: Собрать APK
+        run: bash scripts/build-android-apk.sh
+      - name: Проверить подпись APK
+        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-seas-adventure.apk
+      - name: Загрузить APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: north-seas-android-apk
+          path: generated-artifacts/north-seas-adventure.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  linux-packages:
+    name: Linux DEB и RPM
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v7
+      - name: Настроить Rust и WebAssembly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Настроить пути Rust
+        run: |
+          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Установить wasm-pack и RPM-инструменты
+        run: |
+          cargo install --locked wasm-pack --version 0.13.1
+          sudo apt-get update
+          sudo apt-get install --yes rpm
+      - name: Собрать пакеты Linux
+        run: bash scripts/build-linux-packages.sh
+      - name: Проверить пакеты
+        run: |
+          dpkg-deb --info generated-artifacts/linux/*.deb
+          rpm -qp --info generated-artifacts/linux/*.rpm
+      - name: Загрузить DEB и RPM
+        uses: actions/upload-artifact@v7
+        with:
+          name: north-seas-linux-packages
+          path: generated-artifacts/linux/*
+          if-no-files-found: error
+          retention-days: 90
