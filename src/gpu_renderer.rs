@@ -160,7 +160,12 @@ impl GpuRenderer {
         self.surface.configure(&self.device, &self.configuration);
     }
 
-    pub(crate) fn render(&mut self, mesh: &SceneMesh) -> Result<(), String> {
+    pub(crate) fn render(
+        &mut self,
+        mesh: &SceneMesh,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Result<(), String> {
         let mut values = Vec::with_capacity(mesh.vertices.len() * 6);
         for vertex in &mesh.vertices {
             values.extend([
@@ -185,7 +190,7 @@ impl GpuRenderer {
         if !bytes.is_empty() {
             self.queue.write_buffer(&self.vertex_buffer, 0, bytes);
         }
-        self.resize(mesh.width as u32, mesh.height as u32);
+        self.resize(surface_width, surface_height);
 
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
