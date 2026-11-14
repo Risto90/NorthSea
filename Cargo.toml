@@ -58,6 +58,11 @@ web-sys = { version = "0.3", features = [
     "PointerEvent",
     "Storage",
     "console",
+    "WebGlBuffer",
+    "WebGlProgram",
+    "WebGlRenderingContext",
+    "WebGlShader",
+    "WebGlUniformLocation",
     "WheelEvent",
     "Window",
 ] }

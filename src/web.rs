@@ -10,7 +10,7 @@ use web_sys::{
     PointerEvent, WheelEvent, Window,
 };
 
-use crate::{SailingControl, gpu_renderer::GpuRenderer};
+use crate::{SailingControl, gpu_renderer::GpuRenderer, webgl_renderer::WebGlRenderer};
 
 const STORAGE_KEY: &str = "north-seas-adventure.keyboard-bindings.v1";
 
@@ -148,9 +148,20 @@ impl Default for WebState {
 
 thread_local! {
     static WEB_STATE: RefCell<WebState> = RefCell::new(WebState::default());
-    static GPU_RENDERER: RefCell<Option<GpuRenderer>> = const { RefCell::new(None) };
+    static BROWSER_RENDERER: RefCell<Option<BrowserRenderer>> = const { RefCell::new(None) };
     static EVENT_HANDLERS: RefCell<Vec<Closure<dyn FnMut(Event)>>> = const { RefCell::new(Vec::new()) };
     static ANIMATION_HANDLER: RefCell<Option<Closure<dyn FnMut(f64)>>> = const { RefCell::new(None) };
+}
+
+#[allow(dead_code)]
+enum BrowserRenderer {
+    WebGpu(GpuRenderer),
+    WebGl(WebGlRenderer),
+}
+
+#[allow(dead_code)]
+fn create_webgl_renderer(canvas: HtmlCanvasElement) -> Result<BrowserRenderer, String> {
+    WebGlRenderer::new(canvas).map(BrowserRenderer::WebGl)
 }
 
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
@@ -183,7 +194,7 @@ pub fn start() -> Result<(), JsValue> {
     wasm_bindgen_futures::spawn_local(async move {
         match GpuRenderer::new_web(canvas).await {
             Ok(renderer) => {
-                GPU_RENDERER.with(|gpu| gpu.replace(Some(renderer)));
+                BROWSER_RENDERER.with(|gpu| gpu.replace(Some(BrowserRenderer::WebGpu(renderer))));
                 if let Some(window) = web_sys::window() {
                     if let Some(document) = window.document() {
                         resize_scene(&window, &document);
@@ -264,9 +275,13 @@ fn render_scene_into(document: &Document) {
     let Ok(mesh) = crate::current_scene_mesh() else {
         return;
     };
-    GPU_RENDERER.with(|renderer| {
+    BROWSER_RENDERER.with(|renderer| {
         if let Some(renderer) = renderer.borrow_mut().as_mut() {
-            if let Err(error) = renderer.render(&mesh, width, height) {
+            let result = match renderer {
+                BrowserRenderer::WebGpu(renderer) => renderer.render(&mesh, width, height),
+                BrowserRenderer::WebGl(renderer) => renderer.render(&mesh, width, height),
+            };
+            if let Err(error) = result {
                 web_sys::console::error_1(&JsValue::from_str(&error));
             }
         }

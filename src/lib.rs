@@ -14,6 +14,8 @@ mod scene_mesh;
 mod vulkan_renderer;
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(target_arch = "wasm32")]
+mod webgl_renderer;
 
 pub use scene_mesh::{SceneMesh, Vertex, build_scene_mesh};
 

@@ -6,9 +6,11 @@ use std::time::{Duration, Instant};
 
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XlibDisplayHandle, XlibWindowHandle};
 
+#[cfg(test)]
+use crate::GraphicsApiPreference;
 use crate::{
-    CameraState, GraphicsApiPreference, NativeSettingsAction, build_scene_mesh,
-    native_renderer::NativeRenderer, native_settings::NativeSettings,
+    CameraState, NativeSettingsAction, build_scene_mesh, native_renderer::NativeRenderer,
+    native_settings::NativeSettings,
 };
 
 type Display = c_void;
