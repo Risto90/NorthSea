@@ -357,6 +357,16 @@ pub fn render_scene() -> String {
     CAMERA_STATE.with(|state| render_svg(*state.borrow()))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn current_scene_mesh() -> Result<SceneMesh, String> {
+    CAMERA_STATE.with(|state| build_scene_mesh(*state.borrow()))
+}
+
+#[cfg(target_os = "linux")]
+pub fn run_desktop() {
+    desktop::run();
+}
+
 fn draw_navigation_hud(svg: &mut String, width: f32, height: f32, state: CameraState) {
     let shortest_side = width.min(height);
     let margin = (shortest_side * 0.03).clamp(10.0, 22.0);
