@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Моря Туманного Севера
+Comment=Морское приключение в раннем Средневековье
+Exec=/usr/bin/north-seas-adventure
+Icon=north-seas-adventure
+Terminal=true
+Categories=Game;
+StartupNotify=false
