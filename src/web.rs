@@ -10,7 +10,7 @@ use web_sys::{
     PointerEvent, WheelEvent, Window,
 };
 
-use crate::gpu_renderer::GpuRenderer;
+use crate::{SailingControl, gpu_renderer::GpuRenderer};
 
 const STORAGE_KEY: &str = "north-seas-adventure.keyboard-bindings.v1";
 
@@ -98,18 +98,9 @@ const ACTIONS: [Action; 12] = [
 ];
 
 #[derive(Clone, Copy)]
-enum SailingControl {
-    Rudder,
-    SpeedUp,
-    SpeedDown,
-}
-
-#[derive(Clone, Copy)]
 struct ActiveControl {
     pointer_id: i32,
     kind: SailingControl,
-    left: f64,
-    width: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -724,36 +715,21 @@ fn handle_pointer_down(event: &PointerEvent, scene: &Element) {
     if !WEB_STATE.with(|state| state.borrow().mobile) {
         return;
     }
-    let Some(target) = event
-        .target()
-        .and_then(|target| target.dyn_into::<Element>().ok())
-    else {
+    let rect = scene.get_bounding_client_rect();
+    let local_x = f64::from(event.client_x()) - rect.left();
+    let local_y = f64::from(event.client_y()) - rect.top();
+    let Some(kind) = sailing_control_at(local_x as f32, local_y as f32) else {
         return;
-    };
-    let Ok(Some(control_element)) = target.closest("[data-sailing-control]") else {
-        return;
-    };
-    let Some(name) = control_element.get_attribute("data-sailing-control") else {
-        return;
-    };
-    let rect = control_element.get_bounding_client_rect();
-    let kind = match name.as_str() {
-        "rudder" => SailingControl::Rudder,
-        "speed-up" => SailingControl::SpeedUp,
-        "speed-down" => SailingControl::SpeedDown,
-        _ => return,
     };
     WEB_STATE.with(|state| {
         state.borrow_mut().active_control = Some(ActiveControl {
             pointer_id,
             kind,
-            left: rect.left(),
-            width: rect.width(),
         });
     });
     event.prevent_default();
     match kind {
-        SailingControl::Rudder => set_rudder_from_pointer(pointer_id, f64::from(event.client_x())),
+        SailingControl::Rudder => set_rudder_from_pointer(pointer_id, local_x),
         SailingControl::SpeedUp => {
             crate::speed_input(1);
             render_from_window();
@@ -796,12 +772,8 @@ fn handle_pointer_move(event: &PointerEvent, scene: &Element) {
         && active.pointer_id == pointer_id
     {
         if matches!(active.kind, SailingControl::Rudder) {
-            let value = ((f64::from(event.client_x()) - active.left) / active.width.max(1.0) * 2.0
-                - 1.0)
-                .clamp(-1.0, 1.0);
-            crate::rudder_input(value as f32);
-            render_from_window();
-            start_sailing();
+            let scene_left = scene.get_bounding_client_rect().left();
+            set_rudder_from_pointer(pointer_id, f64::from(event.client_x()) - scene_left);
         }
         event.prevent_default();
         return;
@@ -877,13 +849,22 @@ fn handle_pointer_end(event: &PointerEvent, _scene: &Element, is_up: bool) {
     }
 }
 
-fn set_rudder_from_pointer(pointer_id: i32, client_x: f64) {
+fn sailing_control_at(x: f32, y: f32) -> Option<SailingControl> {
+    crate::CAMERA_STATE.with(|state| state.borrow().sailing_control_at(x, y))
+}
+
+fn set_rudder_from_pointer(pointer_id: i32, local_x: f64) {
     let active = WEB_STATE.with(|state| state.borrow().active_control);
-    let Some(active) = active.filter(|active| active.pointer_id == pointer_id) else {
+    if !active.is_some_and(|active| {
+        active.pointer_id == pointer_id && matches!(active.kind, SailingControl::Rudder)
+    }) {
         return;
-    };
-    let value = ((client_x - active.left) / active.width.max(1.0) * 2.0 - 1.0).clamp(-1.0, 1.0);
-    crate::rudder_input(value as f32);
+    }
+    crate::CAMERA_STATE.with(|state| {
+        state
+            .borrow_mut()
+            .set_rudder_from_screen_x(local_x as f32)
+    });
     render_from_window();
     start_sailing();
 }

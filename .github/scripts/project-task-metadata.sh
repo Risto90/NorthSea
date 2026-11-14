@@ -119,7 +119,7 @@ ensure_relationship() {
   local relation_type="$2"
   local source_number="$3"
   local target_reference="$4"
-  local target_number target_id source_id endpoint current_parent
+  local target_number target_id source_id endpoint write_number write_endpoint write_id current_parent
 
   target_number="$(resolve_issue_number "$target_reference")"
   [[ "$target_number" != "$source_number" ]] || fail "Issue не может быть связан сам с собой"
@@ -129,18 +129,35 @@ ensure_relationship() {
   case "$relation_type" in
     blocked_by|blocking|relates_to)
       case "$relation_type" in
-        blocked_by) endpoint="dependencies/blocked_by" ;;
-        blocking) endpoint="dependencies/blocking" ;;
-        relates_to) endpoint="relates_to" ;;
+        blocked_by)
+          endpoint="dependencies/blocked_by"
+          write_number="$source_number"
+          write_endpoint="$endpoint"
+          write_id="$target_id"
+          ;;
+        blocking)
+          # GitHub разрешает записывать зависимость через blocked_by;
+          # список blocking является обратным представлением этой связи.
+          endpoint="dependencies/blocking"
+          write_number="$target_number"
+          write_endpoint="dependencies/blocked_by"
+          write_id="$source_id"
+          ;;
+        relates_to)
+          endpoint="relates_to"
+          write_number="$source_number"
+          write_endpoint="$endpoint"
+          write_id="$target_id"
+          ;;
       esac
       if relation_list_contains_id "${source_number}/${endpoint}" "$target_id"; then
         [[ "$action" == "add" ]] && return 0
         gh api --method DELETE \
-          "repos/${repo}/issues/${source_number}/${endpoint}/${target_id}" >/dev/null
+          "repos/${repo}/issues/${write_number}/${write_endpoint}/${write_id}" >/dev/null
       else
         [[ "$action" == "remove" ]] && return 0
-        gh api --method POST "repos/${repo}/issues/${source_number}/${endpoint}" \
-          -F "issue_id=${target_id}" >/dev/null
+        gh api --method POST "repos/${repo}/issues/${write_number}/${write_endpoint}" \
+          -F "issue_id=${write_id}" >/dev/null
       fi
       ;;
     parent)
