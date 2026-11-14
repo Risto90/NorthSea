@@ -1,4 +1,3 @@
-use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
 use android_activity::{
@@ -6,13 +5,9 @@ use android_activity::{
     input::{InputEvent, MotionAction, MotionEvent},
 };
 use ndk::native_window::NativeWindow;
-use raw_window_handle::DisplayHandle;
-use softbuffer::{Context, Surface};
+use raw_window_handle::HasWindowHandle;
 
-use crate::{CameraState, SailingControl, render_svg};
-
-type AndroidContext = Context<DisplayHandle<'static>>;
-type AndroidSurface = Surface<DisplayHandle<'static>, NativeWindow>;
+use crate::{CameraState, SailingControl, build_scene_mesh, gpu_renderer::GpuRenderer};
 
 #[derive(Default)]
 struct TouchState {
@@ -26,14 +21,18 @@ struct TouchState {
 }
 
 struct AndroidRenderer {
-    surface: AndroidSurface,
+    renderer: GpuRenderer,
     window: NativeWindow,
 }
 
 impl AndroidRenderer {
-    fn new(context: &AndroidContext, window: NativeWindow) -> Result<Self, String> {
-        let surface = Surface::new(context, window.clone()).map_err(|error| error.to_string())?;
-        Ok(Self { surface, window })
+    fn new(window: NativeWindow) -> Result<Self, String> {
+        let handle = window
+            .window_handle()
+            .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
+        let renderer = GpuRenderer::new_vulkan(None, handle.as_raw())?;
+        eprintln!("Графический адаптер: {}", renderer.renderer_name());
+        Ok(Self { renderer, window })
     }
 
     fn draw(&mut self, camera: &mut CameraState) -> Result<(), String> {
@@ -41,50 +40,13 @@ impl AndroidRenderer {
         let height = self.window.height().max(1) as u32;
         camera.viewport_width = width as f32;
         camera.viewport_height = height as f32;
-
-        let svg = render_svg(*camera);
-        let options = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_str(&svg, &options)
-            .map_err(|error| format!("Не удалось разобрать SVG-сцену: {error}"))?;
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-            .ok_or_else(|| "Не удалось выделить память для кадра.".to_owned())?;
-        resvg::render(
-            &tree,
-            resvg::tiny_skia::Transform::identity(),
-            &mut pixmap.as_mut(),
-        );
-
-        let width_nonzero = NonZeroU32::new(width).ok_or("Нулевая ширина экрана.")?;
-        let height_nonzero = NonZeroU32::new(height).ok_or("Нулевая высота экрана.")?;
-        self.surface
-            .resize(width_nonzero, height_nonzero)
-            .map_err(|error| error.to_string())?;
-
-        let mut buffer = self
-            .surface
-            .buffer_mut()
-            .map_err(|error| error.to_string())?;
-        let pixels = pixmap.data();
-        for (index, destination) in buffer.iter_mut().enumerate() {
-            let offset = index * 4;
-            *destination = (u32::from(pixels[offset]) << 16)
-                | (u32::from(pixels[offset + 1]) << 8)
-                | u32::from(pixels[offset + 2]);
-        }
-        buffer.present().map_err(|error| error.to_string())
+        let mesh = build_scene_mesh(*camera)?;
+        self.renderer.render(&mesh, width, height)
     }
 }
 
 #[unsafe(no_mangle)]
 pub fn android_main(app: AndroidApp) {
-    let context = match Context::new(DisplayHandle::android()) {
-        Ok(context) => context,
-        Err(error) => {
-            eprintln!("Не удалось открыть Android-экран: {error}");
-            return;
-        }
-    };
-
     let mut camera = CameraState::default();
     camera.set_mobile_controls(true);
     let mut touch = TouchState::default();
@@ -98,7 +60,7 @@ pub fn android_main(app: AndroidApp) {
         app.poll_events(Some(Duration::from_millis(16)), |event| match event {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 renderer = app.native_window().and_then(|window| {
-                    AndroidRenderer::new(&context, window)
+                    AndroidRenderer::new(window)
                         .map_err(|error| {
                             eprintln!("Не удалось создать поверхность Android: {error}");
                         })
