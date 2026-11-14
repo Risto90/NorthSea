@@ -1,8 +1,10 @@
 [package]
-name = "north-seas-adventure"
+name = "north-sea"
 version = "0.1.0"
 edition = "2024"
 publish = false
+homepage = "https://risto90.github.io/NorthSea/"
+repository = "https://github.com/Risto90/NorthSea"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -25,7 +27,8 @@ path = "src/web_preview.rs"
 
 [package.metadata.android]
 package = "com.northseas.adventure"
-apk_name = "north-seas-adventure"
+apk_name = "north-sea"
+resources = "packaging/android/res"
 build_targets = ["aarch64-linux-android"]
 
 [package.metadata.android.sdk]
@@ -33,11 +36,12 @@ min_sdk_version = 23
 target_sdk_version = 36
 
 [package.metadata.android.application]
-label = "Моря Туманного Севера"
+label = "North Sea"
+icon = "@mipmap/ic_launcher"
 theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
 
 [package.metadata.android.application.activity]
-label = "Моря Туманного Севера"
+label = "North Sea"
 config_changes = "orientation|keyboardHidden|screenSize"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

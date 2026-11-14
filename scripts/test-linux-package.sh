@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 2 ]]; then
-  printf 'Использование: %s <пакет.deb> <пакет.rpm>\n' "$0" >&2
+if [[ "$#" -ne 3 ]]; then
+  printf 'Использование: %s <пакет.deb> <пакет.rpm> <иконка.png>\n' "$0" >&2
   exit 2
 fi
 
 deb_package="$(realpath "$1")"
 rpm_package="$(realpath "$2")"
+expected_icon="$(realpath "$3")"
 for tool in cpio dpkg-deb rpm2cpio; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Для проверки Linux-пакетов требуется команда %s.\n' "$tool" >&2
@@ -36,8 +37,9 @@ rpm2cpio "$rpm_package" | (cd "$rpm_root" && cpio --extract --make-directories -
 smoke_test_package() {
   local package_root="$1"
   local package_type="$2"
-  local binary="$package_root/usr/libexec/north-seas-adventure/north-seas-adventure"
-  local launcher="$package_root/usr/bin/north-seas-adventure"
+  local binary="$package_root/usr/libexec/north-sea/north-sea"
+  local launcher="$package_root/usr/bin/north-sea"
+  local package_icon="$package_root/usr/share/icons/hicolor/128x128/apps/north-sea.png"
   local log_file="$temporary_directory/${package_type}-native.log"
   local timeout_seconds="${NORTH_SEAS_SMOKE_TIMEOUT:-8}"
   local status=0
@@ -46,12 +48,16 @@ smoke_test_package() {
     printf 'Пакет %s не содержит нативное приложение и его запускатель.\n' "$package_type" >&2
     return 1
   fi
+  if [[ ! -f "$package_icon" ]] || ! cmp -s "$expected_icon" "$package_icon"; then
+    printf 'Пакет %s не содержит исходную иконку North Sea.\n' "$package_type" >&2
+    return 1
+  fi
   if [[ "$(od -An -N4 -tx1 "$binary" | tr -d ' \n')" != "7f454c46" ]]; then
     printf 'Файл игры в пакете %s не является исполняемым ELF-приложением.\n' "$package_type" >&2
     return 1
   fi
-  if [[ -e "$package_root/usr/libexec/north-seas-adventure/web-preview" \
-     || -e "$package_root/usr/share/north-seas-adventure/www" ]]; then
+  if [[ -e "$package_root/usr/libexec/north-sea/web-preview" \
+     || -e "$package_root/usr/share/north-sea/www" ]]; then
     printf 'Пакет %s ошибочно содержит браузерный сервер или веб-файлы.\n' "$package_type" >&2
     return 1
   fi

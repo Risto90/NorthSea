@@ -213,7 +213,7 @@ impl XWindow {
             return Err("Не удалось создать окно Linux.".to_owned());
         }
 
-        let title = CString::new("Моря Туманного Севера").expect("Название окна содержит NUL.");
+        let title = CString::new("North Sea").expect("Название окна содержит NUL.");
         let protocols_name = CString::new("WM_PROTOCOLS").expect("Имя протокола содержит NUL.");
         let protocol = CString::new("WM_DELETE_WINDOW").expect("Имя протокола содержит NUL.");
         let protocols_atom = unsafe { XInternAtom(display_ptr, protocols_name.as_ptr(), 0) };

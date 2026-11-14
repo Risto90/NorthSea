@@ -41,8 +41,8 @@ cd "$project_root"
   --lib \
   --target aarch64-linux-android
 
-apk_source="$target_directory/debug/apk/north-seas-adventure.apk"
-apk_output="$project_root/generated-artifacts/north-seas-adventure.apk"
+apk_source="$target_directory/debug/apk/north-sea.apk"
+apk_output="$project_root/generated-artifacts/north-sea.apk"
 mkdir -p "$(dirname -- "$apk_output")"
 cp "$apk_source" "$apk_output"
 printf 'APK для тестирования: %s\n' "$apk_output"

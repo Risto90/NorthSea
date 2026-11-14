@@ -112,7 +112,7 @@ impl GpuRenderer {
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                label: Some("Моря Туманного Севера"),
+                label: Some("North Sea"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 ..Default::default()

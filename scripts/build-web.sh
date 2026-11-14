@@ -12,14 +12,15 @@ cd "$project_root"
   --target web \
   --release \
   --out-dir artifacts/north-seas-adventure/src/wasm-bindgen \
-  --out-name north_seas_adventure
+  --out-name north_sea
 
 rm -rf -- "$public_directory"
 mkdir -p "$public_directory/src/wasm-bindgen"
 cp -- "$artifact_directory/index.html" "$public_directory/index.html"
 cp -- "$artifact_directory/public/game.css" "$public_directory/game.css"
 cp -- "$artifact_directory/public/compass.svg" "$public_directory/compass.svg"
-cp -- "$wasm_directory/north_seas_adventure.js" "$public_directory/src/wasm-bindgen/"
-cp -- "$wasm_directory/north_seas_adventure_bg.wasm" "$public_directory/src/wasm-bindgen/"
+cp -- "$project_root/assets/icons/north-sea.png" "$public_directory/north-sea.png"
+cp -- "$wasm_directory/north_sea.js" "$public_directory/src/wasm-bindgen/"
+cp -- "$wasm_directory/north_sea_bg.wasm" "$public_directory/src/wasm-bindgen/"
 
 printf 'Сборка браузерной игры готова: %s\n' "$public_directory"

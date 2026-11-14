@@ -94,10 +94,13 @@ jobs:
       - name: Собрать Android APK
         run: |
           bash scripts/build-android-apk.sh
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-seas-adventure.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-sea.apk
+          apk_badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging generated-artifacts/north-sea.apk)"
+          grep -Fq "application-label:'North Sea'" <<< "$apk_badging"
+          grep -Eq "application: label='North Sea' icon='res/mipmap[^']*/ic_launcher\\.png'" <<< "$apk_badging"
           mkdir -p "$RUNNER_TEMP/release-assets"
-          cp generated-artifacts/north-seas-adventure.apk \
-            "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-android.apk"
+          cp generated-artifacts/north-sea.apk \
+            "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-android.apk"
       - name: Собрать Linux DEB и RPM
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.base }}
@@ -114,9 +117,9 @@ jobs:
             exit 1
           fi
           VK_ICD_FILENAMES="$vulkan_icd" \
-            bash scripts/test-linux-package.sh "$deb" "$rpm"
-          cp "$deb" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.deb"
-          cp "$rpm" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.rpm"
+            bash scripts/test-linux-package.sh "$deb" "$rpm" assets/icons/north-sea.png
+          cp "$deb" "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-linux.deb"
+          cp "$rpm" "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-linux.rpm"
       - name: Настроить GitHub Pages
         uses: actions/configure-pages@v5
       - name: Подготовить сайт для GitHub Pages

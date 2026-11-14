@@ -3,9 +3,9 @@ set -euo pipefail
 
 install_root="${NORTH_SEAS_PACKAGE_ROOT:-}"
 if [[ -n "$install_root" ]]; then
-  binary="$install_root/usr/libexec/north-seas-adventure/north-seas-adventure"
+  binary="$install_root/usr/libexec/north-sea/north-sea"
 else
-  binary="/usr/libexec/north-seas-adventure/north-seas-adventure"
+  binary="/usr/libexec/north-sea/north-sea"
 fi
 
 if [[ ! -x "$binary" ]]; then

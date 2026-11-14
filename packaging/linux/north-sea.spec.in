@@ -1,9 +1,9 @@
-Name: north-seas-adventure
+Name: north-sea
 Version: @VERSION@
 Release: 1%{?dist}
 Summary: Морское приключение в раннем Средневековье
 License: NOASSERTION
-URL: https://github.com/Risto90/NorthSea
+URL: https://risto90.github.io/NorthSea/
 BuildArch: x86_64
 Requires: glibc
 Requires: libgcc
@@ -15,7 +15,7 @@ Requires: mesa-libgbm
 Source0: %{name}-%{version}.tar.gz
 
 %description
-Моря Туманного Севера — нативное приложение с графикой устройства.
+North Sea — нативное приложение с графикой устройства.
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -27,7 +27,7 @@ mkdir -p %{buildroot}
 cp -a . %{buildroot}/
 
 %files
-%attr(0755,root,root) /usr/bin/north-seas-adventure
-%attr(0755,root,root) /usr/libexec/north-seas-adventure/north-seas-adventure
-/usr/share/applications/north-seas-adventure.desktop
-/usr/share/icons/hicolor/scalable/apps/north-seas-adventure.svg
+%attr(0755,root,root) /usr/bin/north-sea
+%attr(0755,root,root) /usr/libexec/north-sea/north-sea
+/usr/share/applications/north-sea.desktop
+/usr/share/icons/hicolor/128x128/apps/north-sea.png

@@ -111,7 +111,7 @@ impl VulkanInstance {
             }
         }
 
-        let app_name = CString::new("Моря Туманного Севера")
+        let app_name = CString::new("North Sea")
             .expect("Название приложения не должно содержать нулевой байт.");
         let app_info = vk::ApplicationInfo::default()
             .application_name(&app_name)

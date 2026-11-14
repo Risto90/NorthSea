@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Моря Туманного Севера"
+title = "North Sea"
 description = "Браузерная версия игры о Торфинне Рататоске. Игровая сцена и ввод реализованы на Rust/WASM; предпросмотр обслуживает Rust-сервер."
 version = "1.0.0"
 id = "artifacts/north-seas-adventure"
