@@ -20,6 +20,7 @@ pub(crate) struct GpuRenderer {
     vertex_buffer: wgpu::Buffer,
     vertex_capacity: u64,
     configuration: wgpu::SurfaceConfiguration,
+    #[cfg(not(target_arch = "wasm32"))]
     renderer_name: String,
 }
 
@@ -34,16 +35,16 @@ impl GpuRenderer {
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
             .map_err(|error| format!("Не удалось создать поверхность WebGPU: {error}"))?;
-        Self::from_surface(instance, surface, wgpu::Backend::BrowserWebGpu).await
+        Self::from_surface(instance, surface, Some(wgpu::Backend::BrowserWebGpu)).await
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn new_vulkan(
+    pub(crate) fn new_native_webgpu(
         display: Option<raw_window_handle::RawDisplayHandle>,
         window: raw_window_handle::RawWindowHandle,
     ) -> Result<Self, String> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = wgpu::Backends::VULKAN;
+        descriptor.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
         let instance = wgpu::Instance::new(descriptor);
         let surface = unsafe {
             instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
@@ -51,18 +52,20 @@ impl GpuRenderer {
                 raw_window_handle: window,
             })
         }
-        .map_err(|error| format!("Не удалось создать поверхность Vulkan: {error}"))?;
+        .map_err(|error| {
+            format!("Не удалось создать поверхность WebGPU для нативного окна: {error}")
+        })?;
         pollster::block_on(Self::from_surface(
             instance,
             surface,
-            wgpu::Backend::Vulkan,
+            None,
         ))
     }
 
     async fn from_surface(
         instance: wgpu::Instance,
         surface: wgpu::Surface<'static>,
-        required_backend: wgpu::Backend,
+        required_backend: Option<wgpu::Backend>,
     ) -> Result<Self, String> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -74,11 +77,13 @@ impl GpuRenderer {
             .await
             .map_err(|error| format!("Не найден графический адаптер: {error}"))?;
         let adapter_info = adapter.get_info();
-        if adapter_info.backend != required_backend {
-            return Err(format!(
-                "Выбран неподходящий графический API: {:?}; требуется {:?}.",
-                adapter_info.backend, required_backend
-            ));
+        if let Some(required_backend) = required_backend {
+            if adapter_info.backend != required_backend {
+                return Err(format!(
+                    "Выбран неподходящий графический API: {:?}; требуется {:?}.",
+                    adapter_info.backend, required_backend
+                ));
+            }
         }
 
         let (device, queue) = adapter
@@ -192,7 +197,8 @@ impl GpuRenderer {
             vertex_buffer,
             vertex_capacity,
             configuration,
-            renderer_name: format!("{} ({:?})", adapter_info.name, adapter_info.backend),
+            #[cfg(not(target_arch = "wasm32"))]
+            renderer_name: format!("WebGPU: {} ({:?})", adapter_info.name, adapter_info.backend),
         })
     }
 
@@ -291,6 +297,7 @@ impl GpuRenderer {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn renderer_name(&self) -> &str {
         &self.renderer_name
     }

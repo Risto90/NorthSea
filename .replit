@@ -12,4 +12,4 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["rustup", "wasm-pack", "android-tools", "xorg.libX11"]
+packages = ["rustup", "wasm-pack", "android-tools", "xorg.libX11", "glib", "nspr", "nss", "dbus", "atk", "at-spi2-atk", "at-spi2-core", "cups", "libxkbcommon", "alsa-lib", "mesa", "vulkan-loader", "cairo", "pango", "gtk3", "fontconfig", "freetype", "xorg.libXext", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "xorg.libXrandr", "xorg.libXcursor", "xorg.libXrender", "xorg.libXinerama", "xorg.libXi", "xorg.libXScrnSaver"]

@@ -263,7 +263,7 @@ pub fn run() {
 
 fn run_inner() -> Result<(), String> {
     let mut window = XWindow::new()?;
-    let mut renderer = GpuRenderer::new_vulkan(
+    let mut renderer = GpuRenderer::new_native_webgpu(
         Some(window.raw_display_handle()),
         window.raw_window_handle(),
     )?;

@@ -30,7 +30,7 @@ impl AndroidRenderer {
         let handle = window
             .window_handle()
             .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
-        let renderer = GpuRenderer::new_vulkan(None, handle.as_raw())?;
+        let renderer = GpuRenderer::new_native_webgpu(None, handle.as_raw())?;
         eprintln!("Графический адаптер: {}", renderer.renderer_name());
         Ok(Self { renderer, window })
     }
