@@ -22,7 +22,7 @@ done
 
 cd "$project_root"
 bash "$project_root/scripts/build-web.sh"
-"$project_root/scripts/with-rust-toolchain.sh" cargo build --release --bin web-preview
+"$project_root/scripts/with-rust-toolchain.sh" cargo build --locked --release --bin web-preview
 
 rm -rf -- "$output_directory" "$stage_directory" "$rpm_top_directory"
 mkdir -p \
