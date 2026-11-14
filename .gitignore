@@ -1,0 +1,77 @@
+# Справка: https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# Скомпилированные файлы
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+target/
+/generated-artifacts/
+.cargo/registry/
+.cargo/git/
+artifacts/north-seas-adventure/src/wasm-bindgen/
+.expo
+.expo-shared
+.next
+.turbo
+.svelte-kit
+.nuxt
+.output
+.vercel
+
+# Зависимости
+node_modules
+
+# Редакторы и среды разработки
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# Редактор VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Прочие временные файлы
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Файлы Replit
+.cache/
+.local/
+/.agents/
+/.studioigor/
+/artifacts/api-server/
+/artifacts/mockup-sandbox/
+/artifacts/north-seas-adventure/package.json
+/artifacts/north-seas-adventure/vite.config.js
+/lib/
+/package.json
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
+/.npmrc
+/tsconfig.base.json
+/tsconfig.json
+/scripts/package.json
+/scripts/post-merge.sh
+/scripts/src/hello.ts
+/scripts/tsconfig.json

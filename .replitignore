@@ -1,0 +1,30 @@
+# Формат файла совпадает с `.dockerignore`.
+# Исключения уменьшают размер образа при публикации проекта.
+
+# Локальные инструменты Replit не входят в публикуемую игру.
+.local
+.agents/
+.studioigor/
+artifacts/api-server/
+artifacts/mockup-sandbox/
+lib/
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.npmrc
+tsconfig.json
+tsconfig.base.json
+scripts/package.json
+scripts/post-merge.sh
+scripts/src/hello.ts
+scripts/tsconfig.json
+artifacts/north-seas-adventure/package.json
+artifacts/north-seas-adventure/vite.config.js
+
+# Локальные результаты сборки Rust.
+target/
+**/target/
+/generated-artifacts/
+
+# Генерируемые Rust/WASM-связки создаются перед сборкой приложения.
+artifacts/north-seas-adventure/src/wasm-bindgen/

@@ -1,0 +1,15 @@
+modules = ["rust-stable", "java-graalvm22.3"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[workflows]
+runButton = "Project"
+
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+packages = ["rustup", "wasm-pack", "android-tools"]

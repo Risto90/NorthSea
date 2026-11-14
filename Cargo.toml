@@ -1,0 +1,54 @@
+[package]
+name = "north-seas-adventure"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "web-preview"
+path = "src/web_preview.rs"
+
+[package.metadata.android]
+package = "com.northseas.adventure"
+apk_name = "north-seas-adventure"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 23
+target_sdk_version = 36
+
+[package.metadata.android.application]
+label = "Моря Туманного Севера"
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
+[package.metadata.android.application.activity]
+label = "Моря Туманного Севера"
+config_changes = "orientation|keyboardHidden|screenSize"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "DomRect",
+    "Element",
+    "Event",
+    "EventTarget",
+    "HtmlElement",
+    "KeyboardEvent",
+    "Navigator",
+    "PointerEvent",
+    "Storage",
+    "WheelEvent",
+    "Window",
+] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.1", features = ["native-activity"] }
+ndk = { version = "0.9.0", features = ["rwh_06"] }
+raw-window-handle = "0.6"
+resvg = { version = "0.45", default-features = false }
+softbuffer = { version = "0.4.8", default-features = false }

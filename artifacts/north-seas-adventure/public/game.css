@@ -1,0 +1,251 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+html {
+  background: #14262c;
+  color-scheme: dark;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+body {
+  min-width: 0;
+  min-height: 100dvh;
+  overscroll-behavior: none;
+  background: #14262c;
+  color: #e3e0d5;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.game-shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #14262c;
+}
+
+.game-stage,
+.game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.game-stage {
+  overflow: hidden;
+}
+
+.game-canvas {
+  display: block;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.game-canvas:active {
+  cursor: grabbing;
+}
+
+.game-canvas svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stage-overlay {
+  z-index: 8;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  background: rgba(12, 26, 33, .94);
+  color: #e3e0d5;
+  text-align: center;
+}
+
+.stage-overlay h2,
+.stage-overlay p {
+  margin: 0;
+}
+
+.stage-overlay h2 {
+  font-size: clamp(20px, 3vw, 27px);
+  font-weight: 500;
+}
+
+.stage-overlay p {
+  color: #aab7b5;
+  font-size: 14px;
+}
+
+.load-mark {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(190, 206, 197, .25);
+  border-top-color: #c9a878;
+  border-radius: 50%;
+  animation: turn 1.1s linear infinite;
+}
+
+@keyframes turn {
+  to { transform: rotate(360deg); }
+}
+
+.hud-settings-button,
+.settings-close {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(221, 198, 154, .54);
+  border-radius: 50%;
+  background: rgba(13, 26, 30, .78);
+  color: #e4d0a6;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-settings-button {
+  position: absolute;
+  z-index: 7;
+  top: calc(20px + env(safe-area-inset-top));
+  right: calc(20px + env(safe-area-inset-right));
+  width: 42px;
+  height: 42px;
+}
+
+.hud-settings-button:hover,
+.settings-close:hover {
+  border-color: #f0d29b;
+  background: rgba(93, 67, 43, .9);
+}
+
+.keyboard-settings {
+  position: absolute;
+  z-index: 9;
+  top: calc(72px + env(safe-area-inset-top));
+  right: calc(20px + env(safe-area-inset-right));
+  width: min(330px, calc(100vw - 32px));
+  max-height: calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(219, 197, 156, .56);
+  background: rgba(17, 28, 30, .96);
+  color: #e6dcc7;
+  box-shadow: 0 12px 40px #0009;
+  backdrop-filter: blur(12px);
+}
+
+.settings-heading,
+.binding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-heading {
+  margin-bottom: 12px;
+}
+
+.settings-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.settings-close {
+  width: 32px;
+  height: 32px;
+  font: inherit;
+  font-size: 20px;
+}
+
+.binding-list {
+  display: grid;
+  gap: 4px;
+}
+
+.binding-row {
+  min-height: 38px;
+  border-bottom: 1px solid rgba(214, 195, 160, .14);
+  font-size: 12px;
+}
+
+.binding-key {
+  min-width: 54px;
+  min-height: 28px;
+  padding: 3px 7px;
+  border: 1px solid rgba(219, 197, 156, .44);
+  border-radius: 3px;
+  background: rgba(8, 19, 22, .8);
+  color: #ead6ae;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.bindings-reset {
+  margin-top: 12px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: #cfb987;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.hud-settings-button:focus-visible,
+.settings-close:focus-visible,
+.binding-key:focus-visible,
+.bindings-reset:focus-visible {
+  outline: 2px solid #e1c18d;
+  outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+  .hud-settings-button {
+    top: calc(12px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+  }
+}
+
+@media (max-height: 440px) {
+  .hud-settings-button {
+    top: calc(8px + env(safe-area-inset-top));
+    width: 36px;
+    height: 36px;
+  }
+
+  .keyboard-settings {
+    top: calc(52px + env(safe-area-inset-top));
+    max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

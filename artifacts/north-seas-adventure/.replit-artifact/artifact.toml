@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Моря Туманного Севера"
+description = "Браузерная версия игры о Торфинне Рататоске. Игровая сцена и ввод реализованы на Rust/WASM; предпросмотр обслуживает Rust-сервер."
+version = "1.0.0"
+id = "artifacts/north-seas-adventure"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23162
+
+[services.development]
+run = "bash ../../scripts/run-web-preview.sh"
+
+[services.production]
+build = [ "bash", "../../scripts/build-web.sh" ]
+serve = "static"
+publicDir = "artifacts/north-seas-adventure/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23162"
