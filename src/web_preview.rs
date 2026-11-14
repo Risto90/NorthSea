@@ -6,6 +6,7 @@ use std::path::{Component, Path};
 use std::thread;
 
 const DEFAULT_PORT: u16 = 23162;
+const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0";
 const DEFAULT_PUBLIC_DIRECTORY: &str = "artifacts/north-seas-adventure/dist/public";
 
 fn main() {
@@ -18,16 +19,18 @@ fn main() {
     let public_directory = env::args()
         .nth(1)
         .unwrap_or_else(|| DEFAULT_PUBLIC_DIRECTORY.to_owned());
+    let bind_address = env::var("BIND_ADDRESS").unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_owned());
     let public_directory = fs::canonicalize(&public_directory).unwrap_or_else(|error| {
         panic!(
             "Не удалось открыть каталог веб-сборки {}: {error}",
             public_directory
         )
     });
-    let listener = TcpListener::bind(("0.0.0.0", port))
-        .unwrap_or_else(|error| panic!("Не удалось запустить веб-сервер на порту {port}: {error}"));
+    let listener = TcpListener::bind((bind_address.as_str(), port)).unwrap_or_else(|error| {
+        panic!("Не удалось запустить веб-сервер на {bind_address}:{port}: {error}")
+    });
 
-    println!("Предпросмотр игры доступен на порту {port}.");
+    println!("Предпросмотр игры доступен по адресу {bind_address}:{port}.");
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
