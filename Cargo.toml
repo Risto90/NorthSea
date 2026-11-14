@@ -8,6 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+bytemuck = "1.25.2"
 tiny-skia-path = { version = "0.11.4", default-features = false }
 usvg = { version = "0.45.1", default-features = false }
 
