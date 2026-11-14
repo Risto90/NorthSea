@@ -2,7 +2,6 @@
 id: vulkan-native-api
 title: Vulkan для Linux и Android
 relationship: blocked_by|webgpu-all-platforms
-relationship: parent|webgpu-all-platforms
 relationship: relates_to|webgl-browser-fallback
 subtask: vulkan-renderer|01. Отдельный Vulkan-путь|Добавить отдельный низкоуровневый Vulkan-путь на Rust для локальных окон Linux и Android, сохранив общий меш и игровые правила.
 subtask: hardware-detection|02. Выбор API по оборудованию|При старте опрашивать возможности графического устройства и выбирать Vulkan при его поддержке, иначе оставлять WebGPU.

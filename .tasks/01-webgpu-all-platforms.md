@@ -3,8 +3,8 @@ id: webgpu-all-platforms
 title: WebGPU для всех версий
 relationship: blocking|vulkan-native-api
 relationship: blocking|webgl-browser-fallback
-relationship: sub_issue|vulkan-native-api
-relationship: sub_issue|webgl-browser-fallback
+remove_relationship: sub_issue|vulkan-native-api
+remove_relationship: sub_issue|webgl-browser-fallback
 subtask: renderer|01. Общий Rust-рендерер WebGPU|Довести общий Rust-рендерер сцены до вывода через WebGPU; не вводить игровой движок и не возвращать программную растеризацию кадров.
 subtask: native-platforms|02. WebGPU в Linux и Android|Подключить WebGPU к нативным окнам Linux и Android, сохранив локальный запуск, существующее управление и обработку жизненного цикла платформ.
 subtask: browser|03. WebGPU в браузере|Подключить WebGPU к холсту браузерной версии, сохранив полноэкранный режим и автоматический выбор мобильного или настольного интерфейса.
