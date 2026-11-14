@@ -3,14 +3,19 @@ set -euo pipefail
 
 script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(dirname "$script_directory")"
-version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$project_root/Cargo.toml" | head -n 1)"
+cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$project_root/Cargo.toml" | head -n 1)"
+version="${PACKAGE_VERSION:-$cargo_version}"
 output_directory="$project_root/generated-artifacts/linux"
 stage_directory="$project_root/target/linux-package-staging"
 public_directory="$project_root/artifacts/north-seas-adventure/dist/public"
 rpm_top_directory="$project_root/target/rpmbuild"
 
-if [[ -z "$version" ]]; then
+if [[ -z "$cargo_version" || -z "$version" ]]; then
   printf 'Не удалось определить версию игры из Cargo.toml.\n' >&2
+  exit 1
+fi
+if [[ -n "${PACKAGE_VERSION:-}" && ! "$version" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+  printf 'PACKAGE_VERSION должен иметь вид r.mmyy.v.c без типа сборки.\n' >&2
   exit 1
 fi
 for tool in dpkg-deb rpmbuild; do
