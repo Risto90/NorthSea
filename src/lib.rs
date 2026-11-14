@@ -4,6 +4,9 @@ use std::fmt::Write;
 mod android;
 #[cfg(target_arch = "wasm32")]
 mod web;
+mod gpu_renderer;
+#[cfg(target_os = "linux")]
+mod desktop;
 mod scene_mesh;
 
 pub use scene_mesh::{SceneMesh, Vertex, build_scene_mesh};
