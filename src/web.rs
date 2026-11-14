@@ -202,7 +202,7 @@ pub fn start() -> Result<(), JsValue> {
             }
             Err(error) => {
                 if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-                    show_gpu_error(&document, &error);
+                    show_gpu_error(&document);
                 }
                 web_sys::console::error_1(&JsValue::from_str(&error));
             }
@@ -288,12 +288,12 @@ fn hide_loading(document: &Document) {
     }
 }
 
-fn show_gpu_error(document: &Document, error: &str) {
+fn show_gpu_error(document: &Document) {
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
-        loading.set_text_content(Some(&format!(
-            "Этому браузеру нужен WebGPU для запуска игры. {error}"
-        )));
+        loading.set_text_content(Some(
+            "WebGPU недоступен в этом браузере или на этом устройстве. Для запуска игры нужен браузер с поддержкой WebGPU и совместимый графический адаптер.",
+        ));
     }
 }
 
