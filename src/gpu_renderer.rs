@@ -240,12 +240,33 @@ impl GpuRenderer {
         self.surface.configure(&self.device, &self.configuration);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn render(
         &mut self,
         mesh: &SceneMesh,
         surface_width: u32,
         surface_height: u32,
     ) -> Result<(), String> {
+        self.render_internal(mesh, surface_width, surface_height)
+            .map(|_| ())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn render_web(
+        &mut self,
+        mesh: &SceneMesh,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Result<bool, String> {
+        self.render_internal(mesh, surface_width, surface_height)
+    }
+
+    fn render_internal(
+        &mut self,
+        mesh: &SceneMesh,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Result<bool, String> {
         let viewport = ViewportUniform {
             size: [mesh.width.max(1.0), mesh.height.max(1.0)],
             padding: [0.0; 2],
@@ -281,7 +302,7 @@ impl GpuRenderer {
                 }
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
+                return Ok(false);
             }
             other => return Err(format!("Не удалось получить кадр Vulkan/WebGPU: {other:?}")),
         };
@@ -323,7 +344,7 @@ impl GpuRenderer {
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
-        Ok(())
+        Ok(true)
     }
 
     #[cfg(not(target_arch = "wasm32"))]

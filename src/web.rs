@@ -341,14 +341,37 @@ fn render_scene_into(document: &Document) {
     BROWSER_RENDERER.with(|renderer| {
         if let Some(renderer) = renderer.borrow_mut().as_mut() {
             let result = match renderer {
-                BrowserRenderer::WebGpu(renderer) => renderer.render(&mesh, width, height),
-                BrowserRenderer::WebGl(renderer) => renderer.render(&mesh, width, height),
+                BrowserRenderer::WebGpu(renderer) => renderer.render_web(&mesh, width, height),
+                BrowserRenderer::WebGl(renderer) => {
+                    renderer.render(&mesh, width, height).map(|()| true)
+                }
             };
-            if let Err(error) = result {
-                web_sys::console::error_1(&JsValue::from_str(&error));
+            match result {
+                Ok(true) => set_frame_status(document, Some("presented")),
+                Ok(false) => set_frame_status(document, Some("skipped")),
+                Err(error) => {
+                    set_frame_status(document, Some("error"));
+                    web_sys::console::error_1(&JsValue::from_str(&error));
+                }
             }
         }
     });
+}
+
+fn set_frame_status(document: &Document, status: Option<&str>) {
+    if let Some(scene) = document_element(document, "game-scene") {
+        match status {
+            Some(status) => {
+                if scene.get_attribute("data-frame-status").as_deref() != Some(status) {
+                    let _ = scene.set_attribute("data-frame-status", status);
+                }
+            }
+            None if scene.has_attribute("data-frame-status") => {
+                let _ = scene.remove_attribute("data-frame-status");
+            }
+            None => {}
+        }
+    }
 }
 
 fn hide_loading(document: &Document) {
@@ -359,6 +382,7 @@ fn hide_loading(document: &Document) {
 
 fn show_graphics_loading(document: &Document) {
     set_graphics_api_status(document, None);
+    set_frame_status(document, None);
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay");
         let _ = loading.remove_attribute("hidden");
@@ -370,6 +394,7 @@ fn show_graphics_loading(document: &Document) {
 
 fn show_graphics_error(document: &Document, preference: BrowserApiPreference) {
     set_graphics_api_status(document, Some("error"));
+    set_frame_status(document, Some("error"));
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
         loading.set_text_content(Some(preference.unavailable_message()));
@@ -758,10 +783,7 @@ fn select_browser_api(window: Window, document: Document, preference: BrowserApi
     wasm_bindgen_futures::spawn_local(async move {
         match initialize_browser_renderer(&renderer_document, canvas, preference).await {
             Ok(renderer) => {
-                set_graphics_api_status(
-                    &renderer_document,
-                    Some(renderer.graphics_api_name()),
-                );
+                set_graphics_api_status(&renderer_document, Some(renderer.graphics_api_name()));
                 BROWSER_RENDERER.with(|current| current.replace(Some(renderer)));
                 resize_scene(&window, &renderer_document);
                 hide_loading(&renderer_document);
