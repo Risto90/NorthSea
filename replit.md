@@ -5,10 +5,12 @@
 ## Запуск и работа
 
 - Тесты: `./scripts/with-rust-toolchain.sh cargo test`
-- Linux: `./scripts/with-rust-toolchain.sh cargo build --release`
+- Тестовый Linux-бинарник для рендеринга SVG: `./scripts/with-rust-toolchain.sh cargo build --release`
 - Web: `bash scripts/build-web.sh`
 - Android APK: `bash scripts/build-android-apk.sh`
+- Пакеты Linux `.deb` и `.rpm`: `bash scripts/build-linux-packages.sh`; они запускают Rust-сервер и открывают WebAssembly-игру в системном браузере.
 - Предпросмотр Web запускается управляемым артефактом Replit и обслуживается Rust-сервером.
+- GitHub Actions собирает APK и Linux-пакеты; отдельный workflow публикует Web на GitHub Pages.
 - Игровой код и сборка не должны зависеть от Node.js, npm или pnpm.
 - Цели сборки: Linux для внутренних проверок, WebAssembly для браузера и Android APK для пользовательских тестов. Windows пока не собираем, но избегаем платформенно-зависимого кода.
 - Игровой рендер реализуется на Rust без игрового движка; Web собирается через `wasm-pack`/`wasm-bindgen`.
