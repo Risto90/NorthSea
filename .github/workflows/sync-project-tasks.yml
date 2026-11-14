@@ -2,6 +2,8 @@ name: Синхронизация задач GitHub
 
 on:
   push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,7 +16,6 @@ concurrency:
 jobs:
   sync:
     name: Обработать файлы задач и директивы коммита
-    if: github.ref_type == 'branch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
