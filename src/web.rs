@@ -206,7 +206,7 @@ pub fn start() -> Result<(), JsValue> {
                 }
             }
             Err(error) => {
-                show_graphics_error(&renderer_document, &error);
+                show_graphics_error(&renderer_document, api_preference);
                 web_sys::console::error_1(&JsValue::from_str(&error));
             }
         }
@@ -357,12 +357,10 @@ fn show_graphics_loading(document: &Document) {
     }
 }
 
-fn show_graphics_error(document: &Document, details: &str) {
+fn show_graphics_error(document: &Document, preference: BrowserApiPreference) {
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
-        loading.set_text_content(Some(&format!(
-            "Не удалось запустить игру с выбранным графическим API. {details}"
-        )));
+        loading.set_text_content(Some(preference.unavailable_message()));
     }
 }
 
@@ -724,7 +722,8 @@ fn select_browser_api(window: Window, document: Document, preference: BrowserApi
     let canvas = match replace_game_canvas(&document) {
         Ok(canvas) => canvas,
         Err(error) => {
-            show_graphics_error(&document, &error);
+            show_graphics_error(&document, preference);
+            web_sys::console::error_1(&JsValue::from_str(&error));
             return;
         }
     };
@@ -738,7 +737,7 @@ fn select_browser_api(window: Window, document: Document, preference: BrowserApi
                 hide_loading(&renderer_document);
             }
             Err(error) => {
-                show_graphics_error(&renderer_document, &error);
+                show_graphics_error(&renderer_document, preference);
                 web_sys::console::error_1(&JsValue::from_str(&error));
             }
         }

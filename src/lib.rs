@@ -106,6 +106,20 @@ impl BrowserApiPreference {
             _ => None,
         }
     }
+
+    pub(crate) fn unavailable_message(self) -> &'static str {
+        match self {
+            Self::Automatic => {
+                "Браузер не смог запустить игру через WebGPU или WebGL. Измените графический API в настройках."
+            }
+            Self::WebGpu => {
+                "Выбранный режим WebGPU недоступен. Автоматический переход к WebGL отключён; выберите другой режим в настройках."
+            }
+            Self::WebGl => {
+                "Выбранный режим WebGL недоступен. Автоматический переход к WebGPU отключён; выберите другой режим в настройках."
+            }
+        }
+    }
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -1559,6 +1573,25 @@ mod tests {
             );
         }
         assert_eq!(BrowserApiPreference::from_storage_value("unknown"), None);
+    }
+
+    #[test]
+    fn browser_graphics_errors_are_clear_and_respect_manual_selection() {
+        assert!(
+            BrowserApiPreference::Automatic
+                .unavailable_message()
+                .contains("WebGPU или WebGL")
+        );
+        assert!(
+            BrowserApiPreference::WebGpu
+                .unavailable_message()
+                .contains("переход к WebGL отключён")
+        );
+        assert!(
+            BrowserApiPreference::WebGl
+                .unavailable_message()
+                .contains("переход к WebGPU отключён")
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
