@@ -6,9 +6,11 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
 use web_sys::{
-    Document, Element, Event, EventTarget, KeyboardEvent, Navigator, PointerEvent, WheelEvent,
-    Window,
+    Document, Element, Event, EventTarget, HtmlCanvasElement, KeyboardEvent, Navigator,
+    PointerEvent, WheelEvent, Window,
 };
+
+use crate::gpu_renderer::GpuRenderer;
 
 const STORAGE_KEY: &str = "north-seas-adventure.keyboard-bindings.v1";
 
@@ -155,6 +157,7 @@ impl Default for WebState {
 
 thread_local! {
     static WEB_STATE: RefCell<WebState> = RefCell::new(WebState::default());
+    static GPU_RENDERER: RefCell<Option<GpuRenderer>> = const { RefCell::new(None) };
     static EVENT_HANDLERS: RefCell<Vec<Closure<dyn FnMut(Event)>>> = const { RefCell::new(Vec::new()) };
     static ANIMATION_HANDLER: RefCell<Option<Closure<dyn FnMut(f64)>>> = const { RefCell::new(None) };
 }
@@ -179,11 +182,32 @@ pub fn start() -> Result<(), JsValue> {
     crate::set_mobile_controls(mobile);
 
     root.set_inner_html(&application_markup(mobile));
-    render_scene_into(&document);
     render_keyboard_settings(&document);
-    hide_loading(&document);
     install_handlers(&window, &document)?;
     resize_scene(&window, &document);
+    let canvas = document
+        .get_element_by_id("game-canvas")
+        .ok_or_else(|| JsValue::from_str("В HTML не найден холст WebGPU."))?
+        .dyn_into::<HtmlCanvasElement>()?;
+    wasm_bindgen_futures::spawn_local(async move {
+        match GpuRenderer::new_web(canvas).await {
+            Ok(renderer) => {
+                GPU_RENDERER.with(|gpu| gpu.replace(Some(renderer)));
+                if let Some(window) = web_sys::window() {
+                    if let Some(document) = window.document() {
+                        resize_scene(&window, &document);
+                        hide_loading(&document);
+                    }
+                }
+            }
+            Err(error) => {
+                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                    show_gpu_error(&document, &error);
+                }
+                web_sys::console::error_1(&JsValue::from_str(&error));
+            }
+        }
+    });
     Ok(())
 }
 
@@ -207,7 +231,7 @@ fn application_markup(mobile: bool) -> String {
     format!(
         r#"<main class="game-shell" data-device="{}">
 <section class="game-stage" aria-label="Игровая сцена">
-<div id="game-scene" class="game-canvas" role="application" aria-label="Игровая сцена" tabindex="0"></div>
+<div id="game-scene" class="game-canvas" role="application" aria-label="Игровая сцена" tabindex="0"><canvas id="game-canvas" aria-label="Игровая сцена"></canvas></div>
 <div id="loading" class="stage-overlay" role="status"><div class="load-mark"></div><h2>Поднимаем парус</h2><p>Загружается игровая сцена…</p></div>
 </section>
 <button id="settings-button" class="hud-settings-button" type="button" data-ui-action="toggle-settings" aria-label="Настройки клавиатуры" aria-expanded="false"{}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></button>
@@ -223,14 +247,53 @@ fn document_element(document: &Document, id: &str) -> Option<Element> {
 }
 
 fn render_scene_into(document: &Document) {
-    if let Some(scene) = document_element(document, "game-scene") {
-        scene.set_inner_html(&crate::render_scene());
+    let Some(canvas) = document_element(document, "game-canvas")
+        .and_then(|element| element.dyn_into::<HtmlCanvasElement>().ok())
+    else {
+        return;
+    };
+    let Some(scene) = document_element(document, "game-scene") else {
+        return;
+    };
+    let rect = scene.get_bounding_client_rect();
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
     }
+    let ratio = web_sys::window()
+        .map(|window| window.device_pixel_ratio().clamp(1.0, 3.0))
+        .unwrap_or(1.0);
+    let width = (rect.width() * ratio).round().max(1.0) as u32;
+    let height = (rect.height() * ratio).round().max(1.0) as u32;
+    if canvas.width() != width {
+        canvas.set_width(width);
+    }
+    if canvas.height() != height {
+        canvas.set_height(height);
+    }
+    let Ok(mesh) = crate::current_scene_mesh() else {
+        return;
+    };
+    GPU_RENDERER.with(|renderer| {
+        if let Some(renderer) = renderer.borrow_mut().as_mut() {
+            if let Err(error) = renderer.render(&mesh, width, height) {
+                web_sys::console::error_1(&JsValue::from_str(&error));
+            }
+        }
+    });
 }
 
 fn hide_loading(document: &Document) {
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("hidden", "");
+    }
+}
+
+fn show_gpu_error(document: &Document, error: &str) {
+    if let Some(loading) = document_element(document, "loading") {
+        let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
+        loading.set_text_content(Some(&format!(
+            "Этому браузеру нужен WebGPU для запуска игры. {error}"
+        )));
     }
 }
 
