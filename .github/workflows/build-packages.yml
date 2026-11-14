@@ -109,6 +109,8 @@ jobs:
           deb="$(find generated-artifacts/linux -maxdepth 1 -name '*.deb' -print -quit)"
           rpm="$(find generated-artifacts/linux -maxdepth 1 -name '*.rpm' -print -quit)"
           test -n "$deb" && test -n "$rpm"
+          test "$(dpkg-deb -f "$deb" Version)" = "$PACKAGE_VERSION"
+          test "$(rpm -qp --qf '%{VERSION}' "$rpm")" = "$PACKAGE_VERSION"
           dpkg-deb --info "$deb"
           rpm -qp --info "$rpm"
           vulkan_icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
@@ -121,7 +123,14 @@ jobs:
           cp "$deb" "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-linux.deb"
           cp "$rpm" "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-linux.rpm"
       - name: Собрать WebAssembly для сайта
-        run: bash scripts/build-web.sh
+        env:
+          RELEASE_BASE: ${{ steps.version.outputs.base }}
+        run: |
+          bash scripts/build-web.sh
+          printf '{"version":"%s","type":"web"}\n' "$RELEASE_BASE" \
+            > artifacts/north-seas-adventure/dist/public/release.json
+          test "$(jq -r '.version' artifacts/north-seas-adventure/dist/public/release.json)" = "$RELEASE_BASE"
+          test "$(jq -r '.type' artifacts/north-seas-adventure/dist/public/release.json)" = "web"
       - name: Настроить GitHub Pages
         uses: actions/configure-pages@v5
       - name: Подготовить сайт для GitHub Pages
