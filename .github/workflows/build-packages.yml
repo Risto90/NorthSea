@@ -51,8 +51,6 @@ jobs:
           version="$(scripts/next-release-version.sh)"
           echo "base=$version" >> "$GITHUB_OUTPUT"
           echo "Будет собрана версия $version."
-      - name: Проверить Rust-код
-        run: cargo test --locked
       - name: Установить Java
         uses: actions/setup-java@v6
         with:
@@ -91,6 +89,8 @@ jobs:
             cpio
           cargo install --locked cargo-apk
           cargo install --locked wasm-pack --version 0.13.1
+      - name: Проверить Rust-код
+        run: cargo test --locked
       - name: Собрать Android APK
         run: |
           bash scripts/build-android-apk.sh
