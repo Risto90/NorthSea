@@ -1,0 +1,63 @@
+name: Публикация Web на GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Собрать WebAssembly
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v7
+      - name: Настроить Rust для WebAssembly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Настроить пути Rust
+        run: |
+          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Установить wasm-pack
+        run: cargo install --locked wasm-pack --version 0.13.1
+      - name: Собрать статическую игру
+        run: bash scripts/build-web.sh
+      - name: Настроить GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+      - name: Загрузить сайт
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: artifacts/north-seas-adventure/dist/public
+
+  deploy:
+    name: Опубликовать сайт
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Развернуть GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
