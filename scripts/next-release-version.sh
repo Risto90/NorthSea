@@ -2,7 +2,7 @@
 set -euo pipefail
 
 global_release="${GLOBAL_RELEASE:-0}"
-month_year="${RELEASE_MONTH_YEAR:-$(TZ=Europe/Moscow date +%m%y)}"
+month_year="$(TZ=Europe/Moscow date +%m%y)"
 
 fail() {
   printf '%s\n' "$1" >&2
