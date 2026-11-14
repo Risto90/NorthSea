@@ -3,6 +3,7 @@ id: webgl-browser-fallback
 title: WebGL-резерв в браузере
 relationship: blocked_by|webgpu-all-platforms
 relationship: parent|webgpu-all-platforms
+relationship: relates_to|vulkan-native-api
 subtask: webgl-renderer|01. Rust-рендерер WebGL|Добавить браузерный рендерер WebGL для общей сцены на Rust/WebAssembly, сохранив WebGPU основным режимом.
 subtask: automatic-fallback|02. Автоматический резерв WebGL|Определять доступность WebGPU и при его отсутствии использовать WebGL; не выполнять скрытый переход при явном выборе пользователем WebGPU.
 subtask: browser-api-setting|03. Настройка WebGPU и WebGL|Добавить переключатель WebGPU/WebGL в настройки веб-версии и сохранять пользовательский выбор.
