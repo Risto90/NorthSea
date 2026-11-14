@@ -57,7 +57,9 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.2.12479018"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Установить cargo-apk
         run: cargo install --locked cargo-apk
       - name: Собрать APK
