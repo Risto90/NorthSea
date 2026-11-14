@@ -4,6 +4,8 @@ use std::fmt::Write;
 mod android;
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+mod gles;
 mod scene_mesh;
 
 pub use scene_mesh::{SceneMesh, Vertex, build_scene_mesh};
