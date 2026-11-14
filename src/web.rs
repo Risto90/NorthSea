@@ -10,7 +10,10 @@ use web_sys::{
     PointerEvent, WheelEvent, Window,
 };
 
-use crate::{SailingControl, gpu_renderer::GpuRenderer, webgl_renderer::WebGlRenderer};
+use crate::{
+    BrowserApiPreference, BrowserGraphicsApi, SailingControl, browser_api_attempts,
+    gpu_renderer::GpuRenderer, webgl_renderer::WebGlRenderer,
+};
 
 const STORAGE_KEY: &str = "north-seas-adventure.keyboard-bindings.v1";
 
@@ -112,6 +115,7 @@ struct PointerPosition {
 struct WebState {
     mobile: bool,
     settings_open: bool,
+    api_preference: BrowserApiPreference,
     listening_action: Option<usize>,
     bindings: Vec<String>,
     pressed_steering: HashSet<usize>,
@@ -129,6 +133,7 @@ impl Default for WebState {
         Self {
             mobile: false,
             settings_open: false,
+            api_preference: BrowserApiPreference::Automatic,
             listening_action: None,
             bindings: ACTIONS
                 .iter()
@@ -153,15 +158,9 @@ thread_local! {
     static ANIMATION_HANDLER: RefCell<Option<Closure<dyn FnMut(f64)>>> = const { RefCell::new(None) };
 }
 
-#[allow(dead_code)]
 enum BrowserRenderer {
     WebGpu(GpuRenderer),
     WebGl(WebGlRenderer),
-}
-
-#[allow(dead_code)]
-fn create_webgl_renderer(canvas: HtmlCanvasElement) -> Result<BrowserRenderer, String> {
-    WebGlRenderer::new(canvas).map(BrowserRenderer::WebGl)
 }
 
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
@@ -191,10 +190,12 @@ pub fn start() -> Result<(), JsValue> {
         .get_element_by_id("game-canvas")
         .ok_or_else(|| JsValue::from_str("В HTML не найден холст WebGPU."))?
         .dyn_into::<HtmlCanvasElement>()?;
+    let api_preference = WEB_STATE.with(|state| state.borrow().api_preference);
+    let renderer_document = document.clone();
     wasm_bindgen_futures::spawn_local(async move {
-        match GpuRenderer::new_web(canvas).await {
+        match initialize_browser_renderer(&renderer_document, canvas, api_preference).await {
             Ok(renderer) => {
-                BROWSER_RENDERER.with(|gpu| gpu.replace(Some(BrowserRenderer::WebGpu(renderer))));
+                BROWSER_RENDERER.with(|current| current.replace(Some(renderer)));
                 if let Some(window) = web_sys::window() {
                     if let Some(document) = window.document() {
                         resize_scene(&window, &document);
@@ -203,14 +204,66 @@ pub fn start() -> Result<(), JsValue> {
                 }
             }
             Err(error) => {
-                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-                    show_gpu_error(&document);
-                }
+                show_graphics_error(&renderer_document, &error);
                 web_sys::console::error_1(&JsValue::from_str(&error));
             }
         }
     });
     Ok(())
+}
+
+async fn initialize_browser_renderer(
+    document: &Document,
+    initial_canvas: HtmlCanvasElement,
+    preference: BrowserApiPreference,
+) -> Result<BrowserRenderer, String> {
+    let attempts = browser_api_attempts(preference);
+    let mut errors = Vec::with_capacity(attempts.len());
+    let mut canvas = Some(initial_canvas);
+
+    for (index, api) in attempts.iter().copied().enumerate() {
+        let current_canvas = if index == 0 {
+            canvas
+                .take()
+                .ok_or_else(|| "Не удалось получить холст игровой сцены.".to_owned())?
+        } else {
+            replace_game_canvas(document)?
+        };
+        let result = match api {
+            BrowserGraphicsApi::WebGpu => GpuRenderer::new_web(current_canvas)
+                .await
+                .map(BrowserRenderer::WebGpu),
+            BrowserGraphicsApi::WebGl => {
+                WebGlRenderer::new(current_canvas).map(BrowserRenderer::WebGl)
+            }
+        };
+        match result {
+            Ok(renderer) => {
+                if index > 0 {
+                    web_sys::console::warn_1(&JsValue::from_str(
+                        "WebGPU недоступен; сцена запущена через резервный WebGL.",
+                    ));
+                }
+                return Ok(renderer);
+            }
+            Err(error) => errors.push(format!("{api:?}: {error}")),
+        }
+    }
+
+    Err(format!(
+        "Не удалось запустить игру через графические API браузера. {}",
+        errors.join(" ")
+    ))
+}
+
+fn replace_game_canvas(document: &Document) -> Result<HtmlCanvasElement, String> {
+    let scene = document_element(document, "game-scene")
+        .ok_or_else(|| "В игре не найден контейнер сцены.".to_owned())?;
+    scene.set_inner_html(r#"<canvas id="game-canvas" aria-label="Игровая сцена"></canvas>"#);
+    document_element(document, "game-canvas")
+        .ok_or_else(|| "Не удалось создать новый холст игровой сцены.".to_owned())?
+        .dyn_into::<HtmlCanvasElement>()
+        .map_err(|error| format!("Новый холст не является элементом canvas: {error:?}"))
 }
 
 fn browser_window() -> Result<Window, JsValue> {
@@ -294,12 +347,12 @@ fn hide_loading(document: &Document) {
     }
 }
 
-fn show_gpu_error(document: &Document) {
+fn show_graphics_error(document: &Document, details: &str) {
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
-        loading.set_text_content(Some(
-            "WebGPU недоступен в этом браузере или на этом устройстве. Для запуска игры нужен браузер с поддержкой WebGPU и совместимый графический адаптер.",
-        ));
+        loading.set_text_content(Some(&format!(
+            "Не удалось запустить игру. WebGPU и WebGL не предоставили работающий графический адаптер. {details}"
+        )));
     }
 }
 

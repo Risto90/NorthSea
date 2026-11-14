@@ -78,6 +78,39 @@ impl GraphicsApiPreference {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum BrowserApiPreference {
+    #[default]
+    Automatic,
+    WebGpu,
+    WebGl,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BrowserGraphicsApi {
+    WebGpu,
+    WebGl,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn browser_api_attempts(
+    preference: BrowserApiPreference,
+) -> &'static [BrowserGraphicsApi] {
+    const AUTOMATIC: [BrowserGraphicsApi; 2] =
+        [BrowserGraphicsApi::WebGpu, BrowserGraphicsApi::WebGl];
+    const WEBGPU_ONLY: [BrowserGraphicsApi; 1] = [BrowserGraphicsApi::WebGpu];
+    const WEBGL_ONLY: [BrowserGraphicsApi; 1] = [BrowserGraphicsApi::WebGl];
+
+    match preference {
+        BrowserApiPreference::Automatic => &AUTOMATIC,
+        BrowserApiPreference::WebGpu => &WEBGPU_ONLY,
+        BrowserApiPreference::WebGl => &WEBGL_ONLY,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SailingControl {
     Rudder,
@@ -1470,6 +1503,26 @@ mod tests {
             GraphicsApiPreference::Vulkan
         );
         assert!(render_svg(camera).contains("#b29660"));
+    }
+
+    #[test]
+    fn browser_graphics_policy_uses_webgpu_then_webgl_automatically() {
+        assert_eq!(
+            browser_api_attempts(BrowserApiPreference::Automatic),
+            [BrowserGraphicsApi::WebGpu, BrowserGraphicsApi::WebGl]
+        );
+    }
+
+    #[test]
+    fn browser_graphics_policy_never_falls_back_from_manual_selection() {
+        assert_eq!(
+            browser_api_attempts(BrowserApiPreference::WebGpu),
+            [BrowserGraphicsApi::WebGpu]
+        );
+        assert_eq!(
+            browser_api_attempts(BrowserApiPreference::WebGl),
+            [BrowserGraphicsApi::WebGl]
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
