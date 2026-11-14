@@ -47,8 +47,13 @@ jobs:
       - name: Проверить прямой Vulkan и WebGPU в Xvfb
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
-          test -f "$VK_ICD_FILENAMES"
-          xvfb-run --auto-servernum cargo test --locked --lib \
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [ -z "$icd" ]; then
+            echo "Не найден ICD Lavapipe в /usr/share/vulkan/icd.d."
+            ls -la /usr/share/vulkan/icd.d
+            exit 1
+          fi
+          echo "ICD Lavapipe: $icd"
+          VK_ICD_FILENAMES="$icd" xvfb-run --auto-servernum cargo test --locked --lib \
             native_graphics_api_smoke_test -- --ignored --nocapture
