@@ -7,7 +7,6 @@ cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$project_root/Cargo.toml" 
 version="${PACKAGE_VERSION:-$cargo_version}"
 output_directory="$project_root/generated-artifacts/linux"
 stage_directory="$project_root/target/linux-package-staging"
-public_directory="$project_root/artifacts/north-seas-adventure/dist/public"
 rpm_top_directory="$project_root/target/rpmbuild"
 
 if [[ -z "$cargo_version" || -z "$version" ]]; then
@@ -26,8 +25,7 @@ for tool in dpkg-deb rpmbuild; do
 done
 
 cd "$project_root"
-bash "$project_root/scripts/build-web.sh"
-"$project_root/scripts/with-rust-toolchain.sh" cargo build --locked --release --bin web-preview
+"$project_root/scripts/with-rust-toolchain.sh" cargo build --locked --release --bin north-seas-adventure
 
 rm -rf -- "$output_directory" "$stage_directory" "$rpm_top_directory"
 mkdir -p \
@@ -35,12 +33,11 @@ mkdir -p \
   "$stage_directory/usr/bin" \
   "$stage_directory/usr/libexec/north-seas-adventure" \
   "$stage_directory/usr/share/applications" \
-  "$stage_directory/usr/share/icons/hicolor/scalable/apps" \
-  "$stage_directory/usr/share/north-seas-adventure/www"
+  "$stage_directory/usr/share/icons/hicolor/scalable/apps"
 
 install -m 0755 \
-  "$project_root/target/release/web-preview" \
-  "$stage_directory/usr/libexec/north-seas-adventure/web-preview"
+  "$project_root/target/release/north-seas-adventure" \
+  "$stage_directory/usr/libexec/north-seas-adventure/north-seas-adventure"
 install -m 0755 \
   "$project_root/packaging/linux/launch-game.sh" \
   "$stage_directory/usr/bin/north-seas-adventure"
@@ -50,7 +47,6 @@ install -m 0644 \
 install -m 0644 \
   "$project_root/artifacts/north-seas-adventure/public/compass.svg" \
   "$stage_directory/usr/share/icons/hicolor/scalable/apps/north-seas-adventure.svg"
-cp -a "$public_directory/." "$stage_directory/usr/share/north-seas-adventure/www/"
 
 deb_directory="$project_root/target/linux-deb"
 rm -rf -- "$deb_directory"
@@ -63,10 +59,10 @@ Version: $version
 Section: games
 Priority: optional
 Architecture: $architecture
-Depends: bash, xdg-utils
+Depends: libc6, libgcc-s1, libx11-6, libvulkan1, libegl1, libgl1, libgbm1
 Maintainer: NorthSea contributors <noreply@github.com>
 Description: Морское приключение в раннем Средневековье
- Игра запускается в системном браузере; игровая логика собрана из Rust в WebAssembly.
+ Нативное приложение запускает игру с графикой устройства.
 EOF
 dpkg-deb --build --root-owner-group \
   "$deb_directory" \

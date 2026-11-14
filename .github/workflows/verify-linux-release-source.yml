@@ -1,14 +1,20 @@
-name: Проверка исходников Linux-релиза
+name: Проверка Linux-пакетов из исходников
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Ссылка на архив ветки main или опубликованный релиз
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   verify-source-archive:
-    name: Собрать приложение из архива релиза
+    name: Собрать и запустить Linux-пакеты
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -25,24 +31,30 @@ jobs:
           echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
           echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - name: Найти последний опубликованный релиз
-        id: release
+      - name: Выбрать исходный архив
+        id: source
         env:
-          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
-          version="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
-            printf 'Не найден релиз с ожидаемым номером сборки.\n' >&2
+          source_ref="$SOURCE_REF"
+          source_ref="${source_ref:-main}"
+          if [[ "$source_ref" == "main" ]]; then
+            archive_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/heads/main.tar.gz"
+          elif [[ "$source_ref" =~ ^[0-9]+\.[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
+            archive_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${source_ref}.tar.gz"
+          else
+            printf 'Укажите main или номер опубликованного релиза.\n' >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Проверяется исходный архив релиза $version."
-      - name: Скачать исходный tar.gz релиза
+          echo "ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "url=$archive_url" >> "$GITHUB_OUTPUT"
+          echo "Проверяется исходный архив $source_ref."
+      - name: Скачать исходный tar.gz
         env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          ARCHIVE_URL: ${{ steps.source.outputs.url }}
         run: |
           curl --fail --location --retry 3 \
-            "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${RELEASE_VERSION}.tar.gz" \
+            "$ARCHIVE_URL" \
             --output "$RUNNER_TEMP/release-source.tar.gz"
           tar -tzf "$RUNNER_TEMP/release-source.tar.gz" >/dev/null
       - name: Распаковать исходный архив
@@ -56,25 +68,49 @@ jobs:
       - name: Установить инструменты Linux-сборки
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cpio rpm
-          cargo install --locked wasm-pack --version 0.13.1
+          sudo apt-get install --yes \
+            cpio \
+            rpm \
+            libx11-dev \
+            libvulkan-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libgbm-dev \
+            libvulkan1 \
+            libegl1 \
+            libgl1 \
+            libgbm1 \
+            mesa-vulkan-drivers \
+            xvfb \
+            xauth
       - name: Проверить и собрать Linux-пакеты из архива
-        env:
-          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
         working-directory: ${{ runner.temp }}/release-source
+        env:
+          SOURCE_REF: ${{ steps.source.outputs.ref }}
         run: |
           cargo test --locked
-          bash scripts/build-linux-packages.sh
+          if [[ "$SOURCE_REF" == "main" ]]; then
+            expected_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+            bash scripts/build-linux-packages.sh
+          else
+            expected_version="$SOURCE_REF"
+            PACKAGE_VERSION="$expected_version" bash scripts/build-linux-packages.sh
+          fi
           deb="$(find generated-artifacts/linux -maxdepth 1 -type f -name '*.deb' -print -quit)"
           rpm="$(find generated-artifacts/linux -maxdepth 1 -type f -name '*.rpm' -print -quit)"
           test -n "$deb" && test -n "$rpm"
-          test "$(dpkg-deb --field "$deb" Version)" = "$PACKAGE_VERSION"
-          test "$(rpm -qp --queryformat '%{VERSION}' "$rpm")" = "$PACKAGE_VERSION"
+          test "$(dpkg-deb --field "$deb" Version)" = "$expected_version"
+          test "$(rpm -qp --queryformat '%{VERSION}' "$rpm")" = "$expected_version"
           echo "deb=$deb" >> "$GITHUB_OUTPUT"
           echo "rpm=$rpm" >> "$GITHUB_OUTPUT"
         id: build
-      - name: Запустить сервер из DEB и RPM
+      - name: Запустить нативные игры из DEB и RPM
         run: |
-          bash "$GITHUB_WORKSPACE/scripts/test-linux-package.sh" \
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$VK_ICD_FILENAMES" ]]; then
+            printf 'Не найден программный Vulkan-драйвер для проверки пакетов.\n' >&2
+            exit 1
+          fi
+          bash "$RUNNER_TEMP/release-source/scripts/test-linux-package.sh" \
             "$RUNNER_TEMP/release-source/${{ steps.build.outputs.deb }}" \
             "$RUNNER_TEMP/release-source/${{ steps.build.outputs.rpm }}"

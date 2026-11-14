@@ -5,12 +5,17 @@ Summary: Морское приключение в раннем Средневе�
 License: NOASSERTION
 URL: https://github.com/Risto90/NorthSea
 BuildArch: x86_64
-Requires: bash
-Requires: xdg-utils
+Requires: glibc
+Requires: libgcc
+Requires: libX11
+Requires: vulkan-loader
+Requires: mesa-libEGL
+Requires: mesa-libGL
+Requires: mesa-libgbm
 Source0: %{name}-%{version}.tar.gz
 
 %description
-Моря Туманного Севера — приключенческая игра, запускаемая в системном браузере.
+Моря Туманного Севера — нативное приложение с графикой устройства.
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -23,7 +28,6 @@ cp -a . %{buildroot}/
 
 %files
 %attr(0755,root,root) /usr/bin/north-seas-adventure
-%attr(0755,root,root) /usr/libexec/north-seas-adventure/web-preview
+%attr(0755,root,root) /usr/libexec/north-seas-adventure/north-seas-adventure
 /usr/share/applications/north-seas-adventure.desktop
 /usr/share/icons/hicolor/scalable/apps/north-seas-adventure.svg
-/usr/share/north-seas-adventure/www/

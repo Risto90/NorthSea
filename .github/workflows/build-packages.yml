@@ -74,7 +74,21 @@ jobs:
       - name: Установить инструменты упаковки
         run: |
           sudo apt-get update
-          sudo apt-get install --yes rpm
+          sudo apt-get install --yes \
+            rpm \
+            libx11-dev \
+            libvulkan-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libgbm-dev \
+            libvulkan1 \
+            libegl1 \
+            libgl1 \
+            libgbm1 \
+            mesa-vulkan-drivers \
+            xvfb \
+            xauth \
+            cpio
           cargo install --locked cargo-apk
           cargo install --locked wasm-pack --version 0.13.1
       - name: Собрать Android APK
@@ -94,6 +108,13 @@ jobs:
           test -n "$deb" && test -n "$rpm"
           dpkg-deb --info "$deb"
           rpm -qp --info "$rpm"
+          vulkan_icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
+          if [[ -z "$vulkan_icd" ]]; then
+            printf 'Не найден программный Vulkan-драйвер для проверки пакетов.\n' >&2
+            exit 1
+          fi
+          VK_ICD_FILENAMES="$vulkan_icd" \
+            bash scripts/test-linux-package.sh "$deb" "$rpm"
           cp "$deb" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.deb"
           cp "$rpm" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.rpm"
       - name: Настроить GitHub Pages
