@@ -164,6 +164,15 @@ enum BrowserRenderer {
     WebGl(WebGlRenderer),
 }
 
+impl BrowserRenderer {
+    fn graphics_api_name(&self) -> &'static str {
+        match self {
+            Self::WebGpu(_) => "webgpu",
+            Self::WebGl(_) => "webgl",
+        }
+    }
+}
+
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
     let window = browser_window()?;
@@ -197,6 +206,7 @@ pub fn start() -> Result<(), JsValue> {
     wasm_bindgen_futures::spawn_local(async move {
         match initialize_browser_renderer(&renderer_document, canvas, api_preference).await {
             Ok(renderer) => {
+                set_graphics_api_status(&renderer_document, Some(renderer.graphics_api_name()));
                 BROWSER_RENDERER.with(|current| current.replace(Some(renderer)));
                 if let Some(window) = web_sys::window() {
                     if let Some(document) = window.document() {
@@ -348,6 +358,7 @@ fn hide_loading(document: &Document) {
 }
 
 fn show_graphics_loading(document: &Document) {
+    set_graphics_api_status(document, None);
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay");
         let _ = loading.remove_attribute("hidden");
@@ -358,9 +369,24 @@ fn show_graphics_loading(document: &Document) {
 }
 
 fn show_graphics_error(document: &Document, preference: BrowserApiPreference) {
+    set_graphics_api_status(document, Some("error"));
     if let Some(loading) = document_element(document, "loading") {
         let _ = loading.set_attribute("class", "stage-overlay stage-overlay-error");
         loading.set_text_content(Some(preference.unavailable_message()));
+    }
+}
+
+fn set_graphics_api_status(document: &Document, api: Option<&str>) {
+    let Some(scene) = document_element(document, "game-scene") else {
+        return;
+    };
+    match api {
+        Some(api) => {
+            let _ = scene.set_attribute("data-graphics-api", api);
+        }
+        None => {
+            let _ = scene.remove_attribute("data-graphics-api");
+        }
     }
 }
 
@@ -732,6 +758,10 @@ fn select_browser_api(window: Window, document: Document, preference: BrowserApi
     wasm_bindgen_futures::spawn_local(async move {
         match initialize_browser_renderer(&renderer_document, canvas, preference).await {
             Ok(renderer) => {
+                set_graphics_api_status(
+                    &renderer_document,
+                    Some(renderer.graphics_api_name()),
+                );
                 BROWSER_RENDERER.with(|current| current.replace(Some(renderer)));
                 resize_scene(&window, &renderer_document);
                 hide_loading(&renderer_document);
