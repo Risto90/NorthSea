@@ -586,6 +586,22 @@ mod tests {
         }));
     }
 
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn native_api_settings_panel_builds_as_a_scene_mesh() {
+        let mut camera = CameraState::default();
+        camera.enable_native_api_settings(true);
+        camera.api_settings_open = true;
+        camera.graphics_api_preference = crate::GraphicsApiPreference::Vulkan;
+
+        let mesh = build_scene_mesh(camera).expect("сетка панели графических настроек");
+        assert!(mesh.vertices.len() > 300);
+        assert!(mesh.vertices.iter().all(|vertex| {
+            vertex.position.iter().all(|value| value.is_finite())
+                && vertex.color.iter().all(|value| value.is_finite())
+        }));
+    }
+
     #[test]
     fn concave_contours_are_triangulated() {
         let points = [

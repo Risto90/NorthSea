@@ -7,6 +7,8 @@ mod desktop;
 mod gpu_renderer;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod native_renderer;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod native_settings;
 mod scene_mesh;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod vulkan_renderer;
@@ -35,6 +37,41 @@ pub struct CameraState {
     pub distant_sea: bool,
     pub damaged: bool,
     pub mobile_controls: bool,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub native_api_settings: bool,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub api_settings_open: bool,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub graphics_api_preference: GraphicsApiPreference,
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GraphicsApiPreference {
+    #[default]
+    Automatic,
+    Vulkan,
+    WebGpu,
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+impl GraphicsApiPreference {
+    pub fn as_storage_value(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::Vulkan => "vulkan",
+            Self::WebGpu => "webgpu",
+        }
+    }
+
+    pub fn from_storage_value(value: &str) -> Option<Self> {
+        match value.trim() {
+            "automatic" => Some(Self::Automatic),
+            "vulkan" => Some(Self::Vulkan),
+            "webgpu" => Some(Self::WebGpu),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +79,13 @@ pub enum SailingControl {
     Rudder,
     SpeedUp,
     SpeedDown,
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativeSettingsAction {
+    TogglePanel,
+    SelectApi(GraphicsApiPreference),
 }
 
 #[derive(Clone, Copy)]
@@ -81,7 +125,42 @@ impl CameraState {
             distant_sea: false,
             damaged: false,
             mobile_controls: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            native_api_settings: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            api_settings_open: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            graphics_api_preference: GraphicsApiPreference::Automatic,
         }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn enable_native_api_settings(&mut self, enabled: bool) {
+        self.native_api_settings = enabled;
+        if !enabled {
+            self.api_settings_open = false;
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub(crate) fn native_settings_action_at(
+        &mut self,
+        x: f32,
+        y: f32,
+    ) -> Option<NativeSettingsAction> {
+        if !self.native_api_settings {
+            return None;
+        }
+        if native_settings_button_rect(self.viewport_width).contains(x, y) {
+            self.api_settings_open = !self.api_settings_open;
+            return Some(NativeSettingsAction::TogglePanel);
+        }
+        if !self.api_settings_open {
+            return None;
+        }
+        let selected = native_settings_preference_at(self.viewport_width, x, y)?;
+        self.graphics_api_preference = selected;
+        Some(NativeSettingsAction::SelectApi(selected))
     }
 
     pub fn set_mobile_controls(&mut self, enabled: bool) {
@@ -145,7 +224,18 @@ impl CameraState {
                 self.distant_sea = !self.distant_sea;
                 self.zoom = if self.distant_sea { 0.72 } else { 1.0 };
             }
-            "r" | "R" => *self = Self::default(),
+            "r" | "R" => {
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                let native_api_settings = self.native_api_settings;
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                let graphics_api_preference = self.graphics_api_preference;
+                *self = Self::default();
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                {
+                    self.native_api_settings = native_api_settings;
+                    self.graphics_api_preference = graphics_api_preference;
+                }
+            }
             _ => {}
         }
     }
@@ -427,6 +517,155 @@ fn draw_navigation_hud(svg: &mut String, width: f32, height: f32, state: CameraS
 
     if state.mobile_controls {
         draw_sailing_controls(svg, width, height, state);
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    draw_native_api_settings(svg, width, state);
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn native_settings_button_rect(width: f32) -> ControlRect {
+    ControlRect {
+        x: (width - 58.0).max(8.0),
+        y: 14.0,
+        width: 44.0,
+        height: 44.0,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn native_settings_panel_rect(width: f32) -> ControlRect {
+    ControlRect {
+        x: (width - 222.0).max(8.0),
+        y: 66.0,
+        width: 210.0,
+        height: 142.0,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn native_settings_preference_at(width: f32, x: f32, y: f32) -> Option<GraphicsApiPreference> {
+    let panel = native_settings_panel_rect(width);
+    if !panel.contains(x, y) {
+        return None;
+    }
+    let row_top = panel.y + 31.0;
+    let row_height = 34.0;
+    let row = ((y - row_top) / row_height).floor() as i32;
+    match row {
+        0..=2 => Some(
+            [
+                GraphicsApiPreference::Automatic,
+                GraphicsApiPreference::Vulkan,
+                GraphicsApiPreference::WebGpu,
+            ][row as usize],
+        ),
+        _ => None,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn draw_native_api_settings(svg: &mut String, width: f32, state: CameraState) {
+    if !state.native_api_settings {
+        return;
+    }
+    let button = native_settings_button_rect(width);
+    let center_x = button.x + button.width * 0.5;
+    let center_y = button.y + button.height * 0.5;
+    write!(
+        svg,
+        r##"<g id="native-api-settings-button">
+<circle cx="{center_x:.1}" cy="{center_y:.1}" r="21" fill="#102126" fill-opacity=".94" stroke="#d4bd94" stroke-width="1.4"/>
+<path d="M{cx:.1} {cy_top:.1}v6m0 8v6M{cx_left:.1} {center_y:.1}h6m8 0h6M{diag_a:.1} {diag_b:.1}l4 4m11 11 4 4M{diag_c:.1} {diag_d:.1}l4-4m11-11 4-4" fill="none" stroke="#e1cfaa" stroke-width="1.6" stroke-linecap="round"/>
+<circle cx="{center_x:.1}" cy="{center_y:.1}" r="5" fill="none" stroke="#e1cfaa" stroke-width="1.6"/>
+</g>"##,
+        cx = center_x,
+        cy_top = center_y - 16.0,
+        cx_left = center_x - 16.0,
+        diag_a = center_x - 11.0,
+        diag_b = center_y - 11.0,
+        diag_c = center_x - 11.0,
+        diag_d = center_y + 11.0,
+    )
+    .expect("Не удалось сформировать кнопку настроек графики.");
+
+    if !state.api_settings_open {
+        return;
+    }
+    let panel = native_settings_panel_rect(width);
+    write!(
+        svg,
+        r##"<g id="native-api-settings-panel">
+<rect x="{x:.1}" y="{y:.1}" width="{w:.1}" height="{h:.1}" rx="5" fill="#102126" fill-opacity=".97" stroke="#d4bd94" stroke-width="1.3"/>
+<path d="M{x:.1} {divider_y:.1}h{w:.1}" stroke="#8c7856" stroke-opacity=".8"/>
+</g>"##,
+        x = panel.x,
+        y = panel.y,
+        w = panel.width,
+        h = panel.height,
+        divider_y = panel.y + 27.0,
+    )
+    .expect("Не удалось сформировать панель настроек графики.");
+    draw_pixel_text(svg, panel.x + 12.0, panel.y + 9.0, 1.5, "API", "#e5d2ad");
+    for (index, preference, label) in [
+        (0, GraphicsApiPreference::Automatic, "АВТО"),
+        (1, GraphicsApiPreference::Vulkan, "VULKAN"),
+        (2, GraphicsApiPreference::WebGpu, "WEBGPU"),
+    ] {
+        let row_y = panel.y + 31.0 + index as f32 * 34.0;
+        if preference == state.graphics_api_preference {
+            write!(
+                svg,
+                r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="30" rx="3" fill="#b29660" fill-opacity=".28" stroke="#d4bd94" stroke-opacity=".72"/>"##,
+                panel.x + 5.0,
+                row_y,
+                panel.width - 10.0,
+            )
+            .expect("Не удалось выделить выбранный API.");
+        }
+        draw_pixel_text(svg, panel.x + 15.0, row_y + 11.0, 1.45, label, "#e5d2ad");
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn draw_pixel_text(svg: &mut String, x: f32, y: f32, pixel: f32, text: &str, color: &str) {
+    let mut cursor = x;
+    for character in text.chars() {
+        let glyph = pixel_glyph(character);
+        for (row, bits) in glyph.iter().enumerate() {
+            for column in 0..5 {
+                if bits & (1 << (4 - column)) != 0 {
+                    write!(
+                        svg,
+                        r##"<rect x="{:.2}" y="{:.2}" width="{pixel:.2}" height="{pixel:.2}" fill="{color}"/>"##,
+                        cursor + column as f32 * pixel,
+                        y + row as f32 * pixel,
+                    )
+                    .expect("Не удалось сформировать подпись настройки API.");
+                }
+            }
+        }
+        cursor += pixel * 6.0;
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn pixel_glyph(character: char) -> [u8; 7] {
+    match character {
+        'A' | 'А' => [14, 17, 17, 31, 17, 17, 17],
+        'B' | 'В' => [30, 17, 17, 30, 17, 17, 30],
+        'E' => [31, 16, 16, 30, 16, 16, 31],
+        'G' => [14, 17, 16, 23, 17, 17, 15],
+        'I' => [31, 4, 4, 4, 4, 4, 31],
+        'K' => [17, 18, 20, 24, 20, 18, 17],
+        'L' => [16, 16, 16, 16, 16, 16, 31],
+        'N' => [17, 25, 25, 21, 19, 19, 17],
+        'O' | 'О' => [14, 17, 17, 17, 17, 17, 14],
+        'P' => [30, 17, 17, 30, 16, 16, 16],
+        'T' | 'Т' => [31, 4, 4, 4, 4, 4, 4],
+        'U' => [17, 17, 17, 17, 17, 17, 14],
+        'V' => [17, 17, 17, 17, 17, 10, 4],
+        'W' => [17, 17, 17, 21, 21, 21, 10],
+        _ => [0; 7],
     }
 }
 
@@ -1143,5 +1382,69 @@ mod tests {
             "Win32",
             0,
         ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn native_graphics_settings_are_hidden_outside_native_apps() {
+        let mut camera = CameraState::default();
+        assert!(!render_svg(camera).contains("native-api-settings-button"));
+
+        camera.enable_native_api_settings(true);
+        let closed = render_svg(camera);
+        assert!(closed.contains("native-api-settings-button"));
+        assert!(!closed.contains("native-api-settings-panel"));
+
+        let button = native_settings_button_rect(camera.viewport_width);
+        assert_eq!(
+            camera.native_settings_action_at(
+                button.x + button.width * 0.5,
+                button.y + button.height * 0.5,
+            ),
+            Some(NativeSettingsAction::TogglePanel)
+        );
+        assert!(render_svg(camera).contains("native-api-settings-panel"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn native_graphics_settings_select_vulkan_without_changing_other_modes() {
+        let mut camera = CameraState::default();
+        camera.enable_native_api_settings(true);
+        let button = native_settings_button_rect(camera.viewport_width);
+        camera.native_settings_action_at(
+            button.x + button.width * 0.5,
+            button.y + button.height * 0.5,
+        );
+
+        let panel = native_settings_panel_rect(camera.viewport_width);
+        let action = camera.native_settings_action_at(panel.x + 20.0, panel.y + 31.0 + 34.0 + 12.0);
+        assert_eq!(
+            action,
+            Some(NativeSettingsAction::SelectApi(
+                GraphicsApiPreference::Vulkan
+            ))
+        );
+        assert_eq!(
+            camera.graphics_api_preference,
+            GraphicsApiPreference::Vulkan
+        );
+        assert!(render_svg(camera).contains("#b29660"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn camera_reset_preserves_the_saved_graphics_api_preference() {
+        let mut camera = CameraState::default();
+        camera.enable_native_api_settings(true);
+        camera.graphics_api_preference = GraphicsApiPreference::WebGpu;
+        camera.apply_key("r");
+
+        assert!(camera.native_api_settings);
+        assert_eq!(
+            camera.graphics_api_preference,
+            GraphicsApiPreference::WebGpu
+        );
+        assert!(!camera.api_settings_open);
     }
 }

@@ -7,7 +7,10 @@ use android_activity::{
 use ndk::native_window::NativeWindow;
 use raw_window_handle::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
-use crate::{CameraState, SailingControl, build_scene_mesh, native_renderer::NativeRenderer};
+use crate::{
+    CameraState, GraphicsApiPreference, NativeSettingsAction, SailingControl, build_scene_mesh,
+    native_renderer::NativeRenderer, native_settings::NativeSettings,
+};
 
 #[derive(Default)]
 struct TouchState {
@@ -26,15 +29,16 @@ struct AndroidRenderer {
 }
 
 impl AndroidRenderer {
-    fn new(window: NativeWindow) -> Result<Self, String> {
+    fn new(window: NativeWindow, preference: GraphicsApiPreference) -> Result<Self, String> {
         let handle = window
             .window_handle()
             .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
-        let renderer = NativeRenderer::new_auto(
+        let renderer = NativeRenderer::new_with_preference(
             Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
             handle.as_raw(),
             window.width().max(1) as u32,
             window.height().max(1) as u32,
+            preference,
         )?;
         eprintln!("Графический адаптер: {}", renderer.renderer_name());
         Ok(Self { renderer, window })
@@ -52,8 +56,17 @@ impl AndroidRenderer {
 
 #[unsafe(no_mangle)]
 pub fn android_main(app: AndroidApp) {
+    let mut settings = match NativeSettings::load_android(&app) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Не удалось загрузить настройки игры: {error}");
+            return;
+        }
+    };
     let mut camera = CameraState::default();
     camera.set_mobile_controls(true);
+    camera.enable_native_api_settings(true);
+    camera.graphics_api_preference = settings.graphics_api();
     let mut touch = TouchState::default();
     let mut renderer: Option<AndroidRenderer> = None;
     let mut redraw = true;
@@ -65,7 +78,9 @@ pub fn android_main(app: AndroidApp) {
         app.poll_events(Some(Duration::from_millis(16)), |event| match event {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 renderer = app.native_window().and_then(|window| {
-                    AndroidRenderer::new(window)
+                    camera.viewport_width = window.width().max(1) as f32;
+                    camera.viewport_height = window.height().max(1) as f32;
+                    AndroidRenderer::new(window, settings.graphics_api())
                         .map_err(|error| {
                             eprintln!("Не удалось создать поверхность Android: {error}");
                         })
@@ -81,9 +96,14 @@ pub fn android_main(app: AndroidApp) {
             PollEvent::Main(MainEvent::InputAvailable { .. }) => {
                 if let Ok(mut input_events) = app.input_events_iter() {
                     loop {
+                        let mut selected_api = None;
                         let received_input = input_events.next(|event| match event {
                             InputEvent::MotionEvent(motion) => {
+                                let previous_api = camera.graphics_api_preference;
                                 if handle_input(motion, &mut camera, &mut touch) {
+                                    if camera.graphics_api_preference != previous_api {
+                                        selected_api = Some(camera.graphics_api_preference);
+                                    }
                                     redraw = true;
                                     InputStatus::Handled
                                 } else {
@@ -94,6 +114,32 @@ pub fn android_main(app: AndroidApp) {
                         });
                         if !received_input {
                             break;
+                        }
+                        if let Some(preference) = selected_api {
+                            let window = app.native_window();
+                            let next_renderer =
+                                window.map(|window| AndroidRenderer::new(window, preference));
+                            match next_renderer {
+                                Some(Ok(next_renderer)) => {
+                                    match settings.save_graphics_api(preference) {
+                                        Ok(()) => renderer = Some(next_renderer),
+                                        Err(error) => {
+                                            eprintln!("{error}");
+                                            camera.graphics_api_preference =
+                                                settings.graphics_api();
+                                        }
+                                    }
+                                }
+                                Some(Err(error)) => {
+                                    eprintln!("{error}");
+                                    camera.graphics_api_preference = settings.graphics_api();
+                                }
+                                None => {
+                                    eprintln!("Не удалось получить Android-окно для смены API.");
+                                    camera.graphics_api_preference = settings.graphics_api();
+                                }
+                            }
+                            redraw = true;
                         }
                     }
                 }
@@ -166,6 +212,24 @@ fn handle_input(
 
     match action {
         MotionAction::Down => {
+            if let Some(action) = camera.native_settings_action_at(position.0, position.1) {
+                touch.active_control = None;
+                touch.previous_position = None;
+                touch.tap_start = None;
+                match action {
+                    NativeSettingsAction::TogglePanel => {}
+                    NativeSettingsAction::SelectApi(preference) => {
+                        camera.graphics_api_preference = preference;
+                    }
+                }
+                return true;
+            }
+            if camera.api_settings_open {
+                camera.api_settings_open = false;
+                touch.previous_position = None;
+                touch.tap_start = None;
+                return true;
+            }
             if let Some(control) = camera.sailing_control_at(position.0, position.1) {
                 touch.active_control = Some(control);
                 match control {

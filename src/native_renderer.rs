@@ -1,6 +1,9 @@
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
-use crate::{gpu_renderer::GpuRenderer, scene_mesh::SceneMesh, vulkan_renderer::VulkanRenderer};
+use crate::{
+    GraphicsApiPreference, gpu_renderer::GpuRenderer, scene_mesh::SceneMesh,
+    vulkan_renderer::VulkanRenderer,
+};
 
 const AMD_VENDOR_ID: u32 = 0x1002;
 
@@ -73,6 +76,26 @@ pub(crate) enum NativeRenderer {
 }
 
 impl NativeRenderer {
+    pub(crate) fn new_with_preference(
+        display: Option<RawDisplayHandle>,
+        window: RawWindowHandle,
+        width: u32,
+        height: u32,
+        preference: GraphicsApiPreference,
+    ) -> Result<Self, String> {
+        match preference {
+            GraphicsApiPreference::Automatic => Self::new_auto(display, window, width, height),
+            GraphicsApiPreference::Vulkan => {
+                VulkanRenderer::new(display, window, width, height, None)
+                    .map(Self::Vulkan)
+                    .map_err(|error| format!("Не удалось запустить выбранный Vulkan: {error}"))
+            }
+            GraphicsApiPreference::WebGpu => GpuRenderer::new_native_webgpu(display, window)
+                .map(Self::WebGpu)
+                .map_err(|error| format!("Не удалось запустить выбранный WebGPU: {error}")),
+        }
+    }
+
     pub(crate) fn new_auto(
         display: Option<RawDisplayHandle>,
         window: RawWindowHandle,

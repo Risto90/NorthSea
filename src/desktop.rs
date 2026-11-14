@@ -6,7 +6,10 @@ use std::time::{Duration, Instant};
 
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XlibDisplayHandle, XlibWindowHandle};
 
-use crate::{CameraState, build_scene_mesh, native_renderer::NativeRenderer};
+use crate::{
+    CameraState, NativeSettingsAction, build_scene_mesh, native_renderer::NativeRenderer,
+    native_settings::NativeSettings,
+};
 
 type Display = c_void;
 type WindowId = c_ulong;
@@ -273,15 +276,19 @@ pub fn run() {
 
 fn run_inner() -> Result<(), String> {
     let mut window = XWindow::new()?;
-    let mut renderer = NativeRenderer::new_auto(
+    let mut settings = NativeSettings::load_linux()?;
+    let mut camera = CameraState::default();
+    camera.enable_native_api_settings(true);
+    camera.graphics_api_preference = settings.graphics_api();
+    let mut renderer = NativeRenderer::new_with_preference(
         Some(window.raw_display_handle()),
         window.raw_window_handle(),
         window.width,
         window.height,
+        settings.graphics_api(),
     )?;
     println!("Графический адаптер: {}", renderer.renderer_name());
 
-    let mut camera = CameraState::default();
     let mut pressed = HashSet::new();
     let mut steer_left = false;
     let mut steer_right = false;
@@ -300,9 +307,16 @@ fn run_inner() -> Result<(), String> {
                     let mut key = unsafe { event.key };
                     let symbol = unsafe { XLookupKeysym(&mut key, 0) };
                     if symbol == XK_ESCAPE {
-                        running = false;
+                        if camera.api_settings_open {
+                            camera.api_settings_open = false;
+                            redraw = true;
+                        } else {
+                            running = false;
+                        }
                     } else if pressed.insert(key.keycode) {
-                        if let Some(name) = key_name(symbol) {
+                        if !camera.api_settings_open
+                            && let Some(name) = key_name(symbol)
+                        {
                             match name {
                                 "a" => steer_left = true,
                                 "d" => steer_right = true,
@@ -337,7 +351,51 @@ fn run_inner() -> Result<(), String> {
                 BUTTON_PRESS => {
                     let button = unsafe { event.button };
                     if button.button == 1 {
-                        mouse_position = Some((button.x, button.y));
+                        match camera.native_settings_action_at(button.x as f32, button.y as f32) {
+                            Some(NativeSettingsAction::TogglePanel) => {
+                                mouse_position = None;
+                                redraw = true;
+                            }
+                            Some(NativeSettingsAction::SelectApi(preference)) => {
+                                mouse_position = None;
+                                let previous_preference = settings.graphics_api();
+                                if preference != previous_preference {
+                                    match NativeRenderer::new_with_preference(
+                                        Some(window.raw_display_handle()),
+                                        window.raw_window_handle(),
+                                        window.width,
+                                        window.height,
+                                        preference,
+                                    ) {
+                                        Ok(next_renderer) => {
+                                            match settings.save_graphics_api(preference) {
+                                                Ok(()) => {
+                                                    renderer = next_renderer;
+                                                    println!(
+                                                        "Выбран графический API: {}",
+                                                        renderer.renderer_name()
+                                                    );
+                                                }
+                                                Err(error) => {
+                                                    eprintln!("{error}");
+                                                    camera.graphics_api_preference =
+                                                        previous_preference;
+                                                }
+                                            }
+                                        }
+                                        Err(error) => {
+                                            eprintln!("{error}");
+                                            camera.graphics_api_preference = previous_preference;
+                                        }
+                                    }
+                                }
+                                redraw = true;
+                            }
+                            None if camera.api_settings_open => {
+                                mouse_position = None;
+                            }
+                            None => mouse_position = Some((button.x, button.y)),
+                        }
                     }
                 }
                 BUTTON_RELEASE => {
