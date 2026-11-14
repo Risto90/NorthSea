@@ -71,7 +71,16 @@ fn draw_path(path: &usvg::Path, group_opacity: f32, vertices: &mut Vec<Vertex>) 
 
     if let Some(fill) = path.fill() {
         for contour in &contours {
-            let triangles = triangulate(&contour.points, fill.rule())?;
+            let triangles = triangulate(&contour.points, fill.rule()).map_err(|error| {
+                format!(
+                    "{error} Контур: {} точек, границы ({:.1}, {:.1})—({:.1}, {:.1}).",
+                    contour.points.len(),
+                    bounds.x(),
+                    bounds.y(),
+                    bounds.right(),
+                    bounds.bottom(),
+                )
+            })?;
             for triangle in triangles {
                 for point in triangle {
                     let color = paint_color(
@@ -227,6 +236,7 @@ fn push_contour(contours: &mut Vec<Contour>, points: &mut Vec<Point2>, closed: b
 fn triangulate(points: &[Point2], fill_rule: FillRule) -> Result<Vec<[Point2; 3]>, String> {
     let mut contour = points.to_vec();
     remove_duplicate_points(&mut contour);
+    remove_collinear_points(&mut contour);
     if contour.len() < 3 {
         return Ok(Vec::new());
     }
@@ -285,6 +295,27 @@ fn remove_duplicate_points(points: &mut Vec<Point2>) {
     points.dedup_by(|left, right| distance_squared(*left, *right) < 0.0001);
     if points.len() > 1 && distance_squared(points[0], *points.last().unwrap()) < 0.0001 {
         points.pop();
+    }
+}
+
+fn remove_collinear_points(points: &mut Vec<Point2>) {
+    while points.len() > 3 {
+        let mut removed = false;
+        for index in 0..points.len() {
+            let previous = points[(index + points.len() - 1) % points.len()];
+            let current = points[index];
+            let next = points[(index + 1) % points.len()];
+            let between = (current.x - previous.x) * (current.x - next.x)
+                + (current.y - previous.y) * (current.y - next.y);
+            if cross(previous, current, next).abs() <= 0.001 && between <= 0.001 {
+                points.remove(index);
+                removed = true;
+                break;
+            }
+        }
+        if !removed {
+            break;
+        }
     }
 }
 
@@ -505,6 +536,23 @@ mod tests {
             viewport_width: 402.0,
             viewport_height: 874.0,
             mobile_controls: true,
+            ..CameraState::default()
+        })
+        .unwrap();
+
+        assert!(mesh.vertices.len() > 300);
+        assert_eq!(mesh.vertices.len() % 3, 0);
+        assert!(mesh.vertices.iter().all(|vertex| {
+            vertex.position.iter().all(|value| value.is_finite())
+                && vertex.color.iter().all(|value| value.is_finite())
+        }));
+    }
+
+    #[test]
+    fn landscape_scene_mesh_contains_finite_colored_triangles() {
+        let mesh = build_scene_mesh(CameraState {
+            viewport_width: 1200.0,
+            viewport_height: 700.0,
             ..CameraState::default()
         })
         .unwrap();
