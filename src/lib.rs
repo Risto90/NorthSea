@@ -5,6 +5,8 @@ mod android;
 #[cfg(target_os = "linux")]
 mod desktop;
 mod gpu_renderer;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod native_renderer;
 mod scene_mesh;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod vulkan_renderer;

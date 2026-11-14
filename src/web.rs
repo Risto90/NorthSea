@@ -722,10 +722,7 @@ fn handle_pointer_down(event: &PointerEvent, scene: &Element) {
         return;
     };
     WEB_STATE.with(|state| {
-        state.borrow_mut().active_control = Some(ActiveControl {
-            pointer_id,
-            kind,
-        });
+        state.borrow_mut().active_control = Some(ActiveControl { pointer_id, kind });
     });
     event.prevent_default();
     match kind {
@@ -860,11 +857,7 @@ fn set_rudder_from_pointer(pointer_id: i32, local_x: f64) {
     }) {
         return;
     }
-    crate::CAMERA_STATE.with(|state| {
-        state
-            .borrow_mut()
-            .set_rudder_from_screen_x(local_x as f32)
-    });
+    crate::CAMERA_STATE.with(|state| state.borrow_mut().set_rudder_from_screen_x(local_x as f32));
     render_from_window();
     start_sailing();
 }

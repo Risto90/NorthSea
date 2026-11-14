@@ -1,6 +1,29 @@
 use std::borrow::Cow;
 
+#[cfg(not(target_arch = "wasm32"))]
+use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, RawDisplayHandle};
+
 use crate::scene_mesh::{SceneMesh, Vertex};
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct NativeDisplayHandle(RawDisplayHandle);
+
+#[cfg(not(target_arch = "wasm32"))]
+// Безопасность обеспечивается платформенным владельцем дисплея и XInitThreads на Linux.
+unsafe impl Send for NativeDisplayHandle {}
+
+#[cfg(not(target_arch = "wasm32"))]
+// Безопасность обеспечивается платформенным владельцем дисплея и XInitThreads на Linux.
+unsafe impl Sync for NativeDisplayHandle {}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl HasDisplayHandle for NativeDisplayHandle {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        // Дескриптор остаётся действительным, пока существует нативное окно и рендерер.
+        Ok(unsafe { DisplayHandle::borrow_raw(self.0) })
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -42,7 +65,10 @@ impl GpuRenderer {
         window: raw_window_handle::RawWindowHandle,
     ) -> Result<Self, String> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+        descriptor.backends = wgpu::Backends::GL;
+        descriptor.display = Some(Box::new(NativeDisplayHandle(display.ok_or_else(|| {
+            "Для WebGPU необходим дескриптор нативного дисплея.".to_owned()
+        })?)));
         let instance = wgpu::Instance::new(descriptor);
         let surface = unsafe {
             instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {

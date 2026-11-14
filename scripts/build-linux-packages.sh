@@ -70,10 +70,12 @@ dpkg-deb --build --root-owner-group \
 
 mkdir -p \
   "$rpm_top_directory/BUILD" \
+  "$rpm_top_directory/db" \
   "$rpm_top_directory/RPMS" \
   "$rpm_top_directory/SOURCES" \
   "$rpm_top_directory/SPECS" \
-  "$rpm_top_directory/SRPMS"
+  "$rpm_top_directory/SRPMS" \
+  "$rpm_top_directory/tmp"
 rpm_source_directory="$rpm_top_directory/SOURCES/north-seas-adventure-$version"
 mkdir -p "$rpm_source_directory"
 cp -a "$stage_directory/." "$rpm_source_directory/"
@@ -83,7 +85,10 @@ tar -C "$rpm_top_directory/SOURCES" \
 sed "s/@VERSION@/$version/g" \
   "$project_root/packaging/linux/north-seas-adventure.spec.in" \
   > "$rpm_top_directory/SPECS/north-seas-adventure.spec"
-rpmbuild --define "_topdir $rpm_top_directory" \
+rpmbuild \
+  --define "_topdir $rpm_top_directory" \
+  --define "_dbpath $rpm_top_directory/db" \
+  --define "_tmppath $rpm_top_directory/tmp" \
   -bb "$rpm_top_directory/SPECS/north-seas-adventure.spec"
 cp "$rpm_top_directory"/RPMS/x86_64/north-seas-adventure-"$version"-1*.rpm \
   "$output_directory/"

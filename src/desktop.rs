@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XlibDisplayHandle, XlibWindowHandle};
 
-use crate::{CameraState, build_scene_mesh, vulkan_renderer::VulkanRenderer};
+use crate::{CameraState, build_scene_mesh, native_renderer::NativeRenderer};
 
 type Display = c_void;
 type WindowId = c_ulong;
@@ -35,6 +35,7 @@ const XK_DOWN: c_ulong = 0xff54;
 
 #[link(name = "X11")]
 unsafe extern "C" {
+    fn XInitThreads() -> c_int;
     fn XOpenDisplay(name: *const c_char) -> *mut Display;
     fn XCloseDisplay(display: *mut Display) -> c_int;
     fn XDefaultScreen(display: *mut Display) -> c_int;
@@ -190,6 +191,9 @@ struct XWindow {
 
 impl XWindow {
     fn new() -> Result<Self, String> {
+        if unsafe { XInitThreads() } == 0 {
+            return Err("Не удалось включить потокобезопасность X11.".to_owned());
+        }
         let display = NonNull::new(unsafe { XOpenDisplay(ptr::null()) })
             .ok_or_else(|| "Не удалось открыть окно Linux: не найден X11-дисплей.".to_owned())?;
         let display_ptr = display.as_ptr();
@@ -269,7 +273,7 @@ pub fn run() {
 
 fn run_inner() -> Result<(), String> {
     let mut window = XWindow::new()?;
-    let mut renderer = VulkanRenderer::new(
+    let mut renderer = NativeRenderer::new_auto(
         Some(window.raw_display_handle()),
         window.raw_window_handle(),
         window.width,

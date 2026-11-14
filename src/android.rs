@@ -5,9 +5,9 @@ use android_activity::{
     input::{InputEvent, MotionAction, MotionEvent},
 };
 use ndk::native_window::NativeWindow;
-use raw_window_handle::HasWindowHandle;
+use raw_window_handle::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
-use crate::{CameraState, SailingControl, build_scene_mesh, vulkan_renderer::VulkanRenderer};
+use crate::{CameraState, SailingControl, build_scene_mesh, native_renderer::NativeRenderer};
 
 #[derive(Default)]
 struct TouchState {
@@ -21,7 +21,7 @@ struct TouchState {
 }
 
 struct AndroidRenderer {
-    renderer: VulkanRenderer,
+    renderer: NativeRenderer,
     window: NativeWindow,
 }
 
@@ -30,8 +30,8 @@ impl AndroidRenderer {
         let handle = window
             .window_handle()
             .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
-        let renderer = VulkanRenderer::new(
-            None,
+        let renderer = NativeRenderer::new_auto(
+            Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
             handle.as_raw(),
             window.width().max(1) as u32,
             window.height().max(1) as u32,
