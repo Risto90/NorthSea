@@ -4,6 +4,9 @@ use std::fmt::Write;
 mod android;
 #[cfg(target_arch = "wasm32")]
 mod web;
+mod scene_mesh;
+
+pub use scene_mesh::{SceneMesh, Vertex, build_scene_mesh};
 
 const WIDTH: f32 = 1200.0;
 const HEIGHT: f32 = 700.0;
