@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XlibDisplayHandle, XlibWindowHandle};
 
-use crate::{CameraState, build_scene_mesh, gpu_renderer::GpuRenderer};
+use crate::{CameraState, build_scene_mesh, vulkan_renderer::VulkanRenderer};
 
 type Display = c_void;
 type WindowId = c_ulong;
@@ -197,7 +197,8 @@ impl XWindow {
         let root = unsafe { XRootWindow(display_ptr, screen) };
         let width = 1200;
         let height = 700;
-        let window = unsafe { XCreateSimpleWindow(display_ptr, root, 0, 0, width, height, 0, 0, 0) };
+        let window =
+            unsafe { XCreateSimpleWindow(display_ptr, root, 0, 0, width, height, 0, 0, 0) };
         if window == 0 {
             unsafe { XCloseDisplay(display_ptr) };
             return Err("Не удалось создать окно Linux.".to_owned());
@@ -218,7 +219,12 @@ impl XWindow {
         unsafe {
             XStoreName(display_ptr, window, title.as_ptr());
             XSelectInput(display_ptr, window, event_mask);
-            XSetWMProtocols(display_ptr, window, &close_protocol as *const Atom as *mut Atom, 1);
+            XSetWMProtocols(
+                display_ptr,
+                window,
+                &close_protocol as *const Atom as *mut Atom,
+                1,
+            );
             XMapWindow(display_ptr, window);
             XFlush(display_ptr);
         }
@@ -263,9 +269,11 @@ pub fn run() {
 
 fn run_inner() -> Result<(), String> {
     let mut window = XWindow::new()?;
-    let mut renderer = GpuRenderer::new_native_webgpu(
+    let mut renderer = VulkanRenderer::new(
         Some(window.raw_display_handle()),
         window.raw_window_handle(),
+        window.width,
+        window.height,
     )?;
     println!("Графический адаптер: {}", renderer.renderer_name());
 

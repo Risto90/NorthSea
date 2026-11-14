@@ -26,9 +26,7 @@ pub(crate) struct GpuRenderer {
 
 impl GpuRenderer {
     #[cfg(target_arch = "wasm32")]
-    pub(crate) async fn new_web(
-        canvas: web_sys::HtmlCanvasElement,
-    ) -> Result<Self, String> {
+    pub(crate) async fn new_web(canvas: web_sys::HtmlCanvasElement) -> Result<Self, String> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         descriptor.backends = wgpu::Backends::BROWSER_WEBGPU;
         let instance = wgpu::Instance::new(descriptor);
@@ -55,11 +53,7 @@ impl GpuRenderer {
         .map_err(|error| {
             format!("Не удалось создать поверхность WebGPU для нативного окна: {error}")
         })?;
-        pollster::block_on(Self::from_surface(
-            instance,
-            surface,
-            None,
-        ))
+        pollster::block_on(Self::from_surface(instance, surface, None))
     }
 
     async fn from_surface(
@@ -141,8 +135,7 @@ impl GpuRenderer {
             label: Some("Шейдер сцены"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SCENE_SHADER)),
         });
-        let attributes =
-            wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
+        let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -248,7 +241,9 @@ impl GpuRenderer {
                 match self.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(frame)
                     | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-                    other => return Err(format!("Не удалось получить кадр Vulkan/WebGPU: {other:?}")),
+                    other => {
+                        return Err(format!("Не удалось получить кадр Vulkan/WebGPU: {other:?}"));
+                    }
                 }
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
@@ -303,44 +298,7 @@ impl GpuRenderer {
     }
 }
 
-const SCENE_SHADER: &str = r#"
-struct ViewportUniform {
-    size: vec2<f32>,
-    padding: vec2<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> viewport: ViewportUniform;
-
-struct VertexInput {
-    @location(0) position: vec2<f32>,
-    @location(1) color: vec4<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-};
-
-@vertex
-fn vs_main(input: VertexInput) -> VertexOutput {
-    var output: VertexOutput;
-    let normalized = input.position / viewport.size;
-    output.position = vec4<f32>(
-        normalized.x * 2.0 - 1.0,
-        1.0 - normalized.y * 2.0,
-        0.0,
-        1.0
-    );
-    output.color = input.color;
-    return output;
-}
-
-@fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return input.color;
-}
-"#;
+const SCENE_SHADER: &str = include_str!("../assets/shaders/scene.wgsl");
 
 #[cfg(test)]
 mod tests {
@@ -348,7 +306,8 @@ mod tests {
 
     #[test]
     fn scene_shader_is_valid_wgsl() {
-        let module = naga::front::wgsl::parse_str(SCENE_SHADER).expect("Шейдер должен разбираться.");
+        let module =
+            naga::front::wgsl::parse_str(SCENE_SHADER).expect("Шейдер должен разбираться.");
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::all(),

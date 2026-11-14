@@ -2,12 +2,14 @@ use std::fmt::Write;
 
 #[cfg(target_os = "android")]
 mod android;
-#[cfg(target_arch = "wasm32")]
-mod web;
-mod gpu_renderer;
 #[cfg(target_os = "linux")]
 mod desktop;
+mod gpu_renderer;
 mod scene_mesh;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod vulkan_renderer;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
 pub use scene_mesh::{SceneMesh, Vertex, build_scene_mesh};
 

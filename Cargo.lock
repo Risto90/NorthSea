@@ -638,6 +638,7 @@ name = "north-seas-adventure"
 version = "0.1.0"
 dependencies = [
  "android-activity",
+ "ash",
  "bytemuck",
  "js-sys",
  "naga",

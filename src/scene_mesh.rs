@@ -51,7 +51,11 @@ fn mesh_from_svg(svg: &str, width: f32, height: f32) -> Result<SceneMesh, String
     Ok(mesh)
 }
 
-fn draw_group(group: &usvg::Group, parent_opacity: f32, vertices: &mut Vec<Vertex>) -> Result<(), String> {
+fn draw_group(
+    group: &usvg::Group,
+    parent_opacity: f32,
+    vertices: &mut Vec<Vertex>,
+) -> Result<(), String> {
     let opacity = parent_opacity * group.opacity().get();
     for node in group.children() {
         match node {
@@ -65,7 +69,11 @@ fn draw_group(group: &usvg::Group, parent_opacity: f32, vertices: &mut Vec<Verte
     Ok(())
 }
 
-fn draw_path(path: &usvg::Path, group_opacity: f32, vertices: &mut Vec<Vertex>) -> Result<(), String> {
+fn draw_path(
+    path: &usvg::Path,
+    group_opacity: f32,
+    vertices: &mut Vec<Vertex>,
+) -> Result<(), String> {
     let contours = flatten_path(path);
     let bounds = path.abs_bounding_box();
 
@@ -110,7 +118,10 @@ fn draw_path(path: &usvg::Path, group_opacity: f32, vertices: &mut Vec<Vertex>) 
                 stroke.opacity().get() * group_opacity,
             ],
             Paint::LinearGradient(gradient) => {
-                let stop = gradient.stops().first().ok_or("У градиента нет цветовых точек.")?;
+                let stop = gradient
+                    .stops()
+                    .first()
+                    .ok_or("У градиента нет цветовых точек.")?;
                 let color = stop.color();
                 [
                     f32::from(color.red) / 255.0,
@@ -120,7 +131,10 @@ fn draw_path(path: &usvg::Path, group_opacity: f32, vertices: &mut Vec<Vertex>) 
                 ]
             }
             Paint::RadialGradient(gradient) => {
-                let stop = gradient.stops().first().ok_or("У градиента нет цветовых точек.")?;
+                let stop = gradient
+                    .stops()
+                    .first()
+                    .ok_or("У градиента нет цветовых точек.")?;
                 let color = stop.color();
                 [
                     f32::from(color.red) / 255.0,
@@ -375,12 +389,20 @@ fn stroke_contour(
             y: delta_x / length * half,
         };
         push_triangle(
-            [offset(start, normal), offset(start, negate(normal)), offset(end, normal)],
+            [
+                offset(start, normal),
+                offset(start, negate(normal)),
+                offset(end, normal),
+            ],
             color,
             vertices,
         );
         push_triangle(
-            [offset(start, negate(normal)), offset(end, negate(normal)), offset(end, normal)],
+            [
+                offset(start, negate(normal)),
+                offset(end, negate(normal)),
+                offset(end, normal),
+            ],
             color,
             vertices,
         );
@@ -469,8 +491,7 @@ fn paint_color(
             let amount = if length_squared <= f32::EPSILON {
                 0.0
             } else {
-                (((point.x - start_x) * delta_x + (point.y - start_y) * delta_y)
-                    / length_squared)
+                (((point.x - start_x) * delta_x + (point.y - start_y) * delta_y) / length_squared)
                     .clamp(0.0, 1.0)
             };
             sample_gradient(gradient.stops(), amount, opacity)

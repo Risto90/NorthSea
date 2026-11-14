@@ -7,7 +7,7 @@ use android_activity::{
 use ndk::native_window::NativeWindow;
 use raw_window_handle::HasWindowHandle;
 
-use crate::{CameraState, SailingControl, build_scene_mesh, gpu_renderer::GpuRenderer};
+use crate::{CameraState, SailingControl, build_scene_mesh, vulkan_renderer::VulkanRenderer};
 
 #[derive(Default)]
 struct TouchState {
@@ -21,7 +21,7 @@ struct TouchState {
 }
 
 struct AndroidRenderer {
-    renderer: GpuRenderer,
+    renderer: VulkanRenderer,
     window: NativeWindow,
 }
 
@@ -30,7 +30,12 @@ impl AndroidRenderer {
         let handle = window
             .window_handle()
             .map_err(|error| format!("Не удалось получить Android-окно: {error}"))?;
-        let renderer = GpuRenderer::new_native_webgpu(None, handle.as_raw())?;
+        let renderer = VulkanRenderer::new(
+            None,
+            handle.as_raw(),
+            window.width().max(1) as u32,
+            window.height().max(1) as u32,
+        )?;
         eprintln!("Графический адаптер: {}", renderer.renderer_name());
         Ok(Self { renderer, window })
     }
