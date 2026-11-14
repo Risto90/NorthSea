@@ -12,4 +12,4 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["rustup", "wasm-pack", "android-tools"]
+packages = ["rustup", "wasm-pack", "android-tools", "xorg.libX11"]

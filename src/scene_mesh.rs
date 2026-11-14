@@ -4,7 +4,7 @@ use usvg::{FillRule, Node, Paint, Tree};
 use crate::{CameraState, render_svg};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 2],
     pub color: [f32; 4],

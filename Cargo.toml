@@ -8,10 +8,13 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-bytemuck = "1.25.2"
+bytemuck = { version = "1.25.2", features = ["derive"] }
 raw-window-handle = "0.6.2"
 tiny-skia-path = { version = "0.11.4", default-features = false }
 usvg = { version = "0.45.1", default-features = false }
+
+[dev-dependencies]
+naga = { version = "30.0.2", default-features = false, features = ["wgsl-in"] }
 
 [[bin]]
 name = "web-preview"

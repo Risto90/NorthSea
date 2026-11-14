@@ -3,6 +3,11 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(dirname "$script_dir")"
+target_directory="${CARGO_TARGET_DIR:-$project_root/target}"
+if [[ "$target_directory" != /* ]]; then
+  target_directory="$project_root/$target_directory"
+fi
+export CARGO_TARGET_DIR="$target_directory"
 
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$project_root/.local/toolchains/android-sdk}}"
 unset ANDROID_SDK_ROOT
@@ -36,7 +41,7 @@ cd "$project_root"
   --lib \
   --target aarch64-linux-android
 
-apk_source="$project_root/target/debug/apk/north-seas-adventure.apk"
+apk_source="$target_directory/debug/apk/north-seas-adventure.apk"
 apk_output="$project_root/generated-artifacts/north-seas-adventure.apk"
 mkdir -p "$(dirname -- "$apk_output")"
 cp "$apk_source" "$apk_output"

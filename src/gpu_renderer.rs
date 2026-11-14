@@ -2,12 +2,21 @@ use std::borrow::Cow;
 
 use crate::scene_mesh::{SceneMesh, Vertex};
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ViewportUniform {
+    size: [f32; 2],
+    padding: [f32; 2],
+}
+
 pub(crate) struct GpuRenderer {
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
+    viewport_buffer: wgpu::Buffer,
+    viewport_bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     vertex_capacity: u64,
     configuration: wgpu::SurfaceConfiguration,
@@ -82,6 +91,41 @@ impl GpuRenderer {
             .await
             .map_err(|error| format!("Не удалось открыть графическое устройство: {error}"))?;
 
+        let viewport_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Параметры области сцены"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: std::num::NonZeroU64::new(
+                        std::mem::size_of::<ViewportUniform>() as u64,
+                    ),
+                },
+                count: None,
+            }],
+        });
+        let viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Размер области сцены"),
+            size: std::mem::size_of::<ViewportUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let viewport_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Параметры преобразования сцены"),
+            layout: &viewport_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: viewport_buffer.as_entire_binding(),
+            }],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Компоновка рендерера сцены"),
+            bind_group_layouts: &[Some(&viewport_layout)],
+            immediate_size: 0,
+        });
+
         let mut configuration = surface
             .get_default_config(&adapter, 1200, 700)
             .ok_or_else(|| "Графический адаптер не поддерживает поверхность окна.".to_owned())?;
@@ -106,7 +150,7 @@ impl GpuRenderer {
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Рендер игровой сцены"),
-            layout: None,
+            layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -143,6 +187,8 @@ impl GpuRenderer {
             device,
             queue,
             pipeline,
+            viewport_buffer,
+            viewport_bind_group,
             vertex_buffer,
             vertex_capacity,
             configuration,
@@ -167,18 +213,13 @@ impl GpuRenderer {
         surface_width: u32,
         surface_height: u32,
     ) -> Result<(), String> {
-        let mut values = Vec::with_capacity(mesh.vertices.len() * 6);
-        for vertex in &mesh.vertices {
-            values.extend([
-                vertex.position[0] / mesh.width * 2.0 - 1.0,
-                1.0 - vertex.position[1] / mesh.height * 2.0,
-                vertex.color[0],
-                vertex.color[1],
-                vertex.color[2],
-                vertex.color[3],
-            ]);
-        }
-        let bytes = bytemuck::cast_slice(&values);
+        let viewport = ViewportUniform {
+            size: [mesh.width.max(1.0), mesh.height.max(1.0)],
+            padding: [0.0; 2],
+        };
+        self.queue
+            .write_buffer(&self.viewport_buffer, 0, bytemuck::bytes_of(&viewport));
+        let bytes: &[u8] = bytemuck::cast_slice(&mesh.vertices);
         if bytes.len() as u64 > self.vertex_capacity {
             self.vertex_capacity = (bytes.len() as u64).next_power_of_two();
             self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -241,6 +282,7 @@ impl GpuRenderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.viewport_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.draw(0..mesh.vertices.len() as u32, 0..1);
         }
@@ -255,6 +297,14 @@ impl GpuRenderer {
 }
 
 const SCENE_SHADER: &str = r#"
+struct ViewportUniform {
+    size: vec2<f32>,
+    padding: vec2<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> viewport: ViewportUniform;
+
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
@@ -268,7 +318,13 @@ struct VertexOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    output.position = vec4<f32>(input.position, 0.0, 1.0);
+    let normalized = input.position / viewport.size;
+    output.position = vec4<f32>(
+        normalized.x * 2.0 - 1.0,
+        1.0 - normalized.y * 2.0,
+        0.0,
+        1.0
+    );
     output.color = input.color;
     return output;
 }
@@ -278,3 +334,19 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return input.color;
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_shader_is_valid_wgsl() {
+        let module = naga::front::wgsl::parse_str(SCENE_SHADER).expect("Шейдер должен разбираться.");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("Шейдер должен проходить проверку WGSL.");
+    }
+}

@@ -582,6 +582,7 @@ dependencies = [
  "android-activity",
  "bytemuck",
  "js-sys",
+ "naga",
  "ndk",
  "pollster",
  "raw-window-handle",
