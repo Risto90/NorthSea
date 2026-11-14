@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Явные директивы в описании коммита:
 # Issue-Task-ID: webgpu-all-platforms
+# Issue-Subtask-ID: renderer
 # Issue-Status: open|closed
 # Issue-Comment: Однострочный комментарий к задаче.
 repo="${GITHUB_REPOSITORY:?Не задан репозиторий GitHub}"
@@ -11,6 +12,7 @@ after="${TASKS_AFTER:?Не задан текущий коммит}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 declare -A seen_blobs=()
+declare -A changed_task_ids=()
 
 fail() {
   printf 'Ошибка синхронизации задач: %s\n' "$*" >&2
@@ -29,72 +31,65 @@ find_issue_number() {
   jq -r '.[0].number // empty' <<< "$matches"
 }
 
+source .github/scripts/project-task-metadata.sh
+
 read_task_file() {
   local commit="$1"
   local path="$2"
-  local content id title dependency body_file issue_number state url
+  local issue_number state url
 
-  content="$(git show "${commit}:${path}")"
-  id="$(sed -n 's/^id:[[:space:]]*//p' <<< "$content" | head -n 1 | tr -d '\r')"
-  title="$(sed -n 's/^title:[[:space:]]*//p' <<< "$content" | head -n 1 | tr -d '\r')"
-  dependency="$(sed -n 's/^depends_on:[[:space:]]*//p' <<< "$content" | head -n 1 | tr -d '\r')"
-  [[ "$id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "некорректный id в ${path}"
-  [[ -n "$title" ]] || fail "не задан title в ${path}"
-  awk '/^---[[:space:]]*$/ { count++; next } END { exit !(count >= 2) }' <<< "$content" ||
-    fail "в ${path} нет корректной пары разделителей YAML-заголовка"
+  parse_task_file "$commit" "$path"
+  printf '\n\n<!-- task-id:%s -->\n' "$TASK_ID" >> "$TASK_BODY_FILE"
+  changed_task_ids["$TASK_ID"]=1
 
-  body_file="$work_dir/task-body.md"
-  awk '
-    /^---[[:space:]]*$/ { count++; next }
-    count >= 2 { print }
-  ' <<< "$content" > "$body_file"
-  printf '\n\n<!-- task-id:%s -->\n' "$id" >> "$body_file"
-
-  if [[ -n "$dependency" ]]; then
-    [[ "$dependency" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "некорректный depends_on в ${path}"
-    issue_number="$(find_issue_number "$dependency")"
-    [[ -n "$issue_number" ]] || fail "сначала должна существовать зависимая задача '$dependency'"
-    printf '\nЗависит от: #%s\n' "$issue_number" >> "$body_file"
-  fi
-
-  issue_number="$(find_issue_number "$id")"
+  issue_number="$(find_issue_number "$TASK_ID")"
   if [[ -z "$issue_number" ]]; then
-    url="$(gh issue create --repo "$repo" --title "$title" --body-file "$body_file")"
+    url="$(gh issue create --repo "$repo" --title "$TASK_TITLE" --body-file "$TASK_BODY_FILE")"
     issue_number="${url##*/}"
     [[ "$issue_number" =~ ^[0-9]+$ ]] || fail "GitHub вернул неожиданный адрес Issue: ${url}"
-    printf 'Создан Issue #%s: %s\n' "$issue_number" "$title"
-    return
+    printf 'Создан Issue #%s: %s\n' "$issue_number" "$TASK_TITLE"
+  else
+    gh issue edit "$issue_number" --repo "$repo" --title "$TASK_TITLE" --body-file "$TASK_BODY_FILE"
+    state="$(gh issue view "$issue_number" --repo "$repo" --json state --jq '.state')"
+    if [[ "$state" == "CLOSED" ]]; then
+      gh issue reopen "$issue_number" --repo "$repo"
+      printf 'Обновлён и снова открыт Issue #%s: %s\n' "$issue_number" "$TASK_TITLE"
+    else
+      printf 'Обновлён Issue #%s: %s\n' "$issue_number" "$TASK_TITLE"
+    fi
   fi
 
-  gh issue edit "$issue_number" --repo "$repo" --title "$title" --body-file "$body_file"
-  state="$(gh issue view "$issue_number" --repo "$repo" --json state --jq '.state')"
-  if [[ "$state" == "CLOSED" ]]; then
-    gh issue reopen "$issue_number" --repo "$repo"
-    printf 'Обновлён и снова открыт Issue #%s: %s\n' "$issue_number" "$title"
-  else
-    printf 'Обновлён Issue #%s: %s\n' "$issue_number" "$title"
-  fi
+  sync_task_subtasks "$issue_number"
 }
 
 apply_commit_directives() {
   local commit="$1"
-  local message task_id status comment issue_number current_state
-  local status_count comment_count
+  local message task_id subtask_id status comment issue_number current_state
+  local status_count comment_count subtask_count
 
   message="$(git show -s --format=%B "$commit")"
   task_id="$(sed -n 's/^Issue-Task-ID:[[:space:]]*//p' <<< "$message" | tail -n 1 | tr -d '\r')"
+  subtask_id="$(sed -n 's/^Issue-Subtask-ID:[[:space:]]*//p' <<< "$message" | tail -n 1 | tr -d '\r')"
   status="$(sed -n 's/^Issue-Status:[[:space:]]*//p' <<< "$message" | tail -n 1 | tr -d '\r')"
   comment="$(sed -n 's/^Issue-Comment:[[:space:]]*//p' <<< "$message" | tail -n 1 | tr -d '\r')"
   status_count="$(grep -c '^Issue-Status:' <<< "$message" || true)"
   comment_count="$(grep -c '^Issue-Comment:' <<< "$message" || true)"
+  subtask_count="$(grep -c '^Issue-Subtask-ID:' <<< "$message" || true)"
 
   [[ "$status_count" -le 1 ]] || fail "в коммите ${commit} указано несколько Issue-Status"
   [[ "$comment_count" -le 1 ]] || fail "в коммите ${commit} указано несколько Issue-Comment"
-  if [[ -z "$task_id" && ( -n "$status" || -n "$comment" || "$status_count" -gt 0 || "$comment_count" -gt 0 ) ]]; then
+  [[ "$subtask_count" -le 1 ]] || fail "в коммите ${commit} указано несколько Issue-Subtask-ID"
+  if [[ -z "$task_id" && ( -n "$subtask_id" || -n "$status" || -n "$comment" || "$status_count" -gt 0 || "$comment_count" -gt 0 ) ]]; then
     fail "директивам статуса или комментария нужен Issue-Task-ID в коммите ${commit}"
   fi
   [[ -n "$task_id" ]] || return 0
   [[ "$task_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "некорректный Issue-Task-ID в коммите ${commit}"
+  if [[ "$subtask_count" -gt 0 ]]; then
+    [[ -n "$subtask_id" ]] || fail "Issue-Subtask-ID не должен быть пустым в коммите ${commit}"
+  fi
+  if [[ -n "$subtask_id" ]]; then
+    [[ "$subtask_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "некорректный Issue-Subtask-ID в коммите ${commit}"
+  fi
   if [[ "$status_count" -gt 0 ]]; then
     [[ "$status" == "open" || "$status" == "closed" ]] ||
       fail "Issue-Status должен быть open или closed в коммите ${commit}"
@@ -103,8 +98,13 @@ apply_commit_directives() {
     [[ -n "$comment" ]] || fail "Issue-Comment не должен быть пустым в коммите ${commit}"
   fi
 
-  issue_number="$(find_issue_number "$task_id")"
-  [[ -n "$issue_number" ]] || fail "Issue для идентификатора '$task_id' не найден"
+  if [[ -n "$subtask_id" ]]; then
+    issue_number="$(find_subtask_issue_number "$task_id" "$subtask_id")"
+    [[ -n "$issue_number" ]] || fail "подзадача '${task_id}/${subtask_id}' не найдена"
+  else
+    issue_number="$(find_issue_number "$task_id")"
+    [[ -n "$issue_number" ]] || fail "Issue для идентификатора '$task_id' не найден"
+  fi
   if [[ "$status_count" -gt 0 ]]; then
     current_state="$(gh issue view "$issue_number" --repo "$repo" --json state --jq '.state')"
     if [[ "$status" == "closed" && "$current_state" != "CLOSED" ]]; then
@@ -159,3 +159,5 @@ else
     apply_commit_directives "$commit"
   done < <(git rev-list --reverse --topo-order "${before}..${after}")
 fi
+
+sync_changed_task_relationships "$after"
