@@ -1,47 +1,57 @@
-name: Сборка пакетов
+name: Ручной выпуск игры
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+env:
+  GLOBAL_RELEASE: "0"
 
 jobs:
-  rust-tests:
-    name: Тесты Rust
+  publish:
+    name: Собрать и опубликовать релиз
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Получить исходный код
         uses: actions/checkout@v7
-      - name: Настроить Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Запустить тесты
-        run: cargo test --locked
-
-  android-apk:
-    name: Android APK
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - name: Получить исходный код
-        uses: actions/checkout@v7
-      - name: Настроить Rust для Android
+        with:
+          fetch-depth: 0
+      - name: Проверить ветку выпуска
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            printf 'Релизы можно собирать только из main.\n' >&2
+            exit 1
+          fi
+      - name: Настроить Rust для всех сборок
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,wasm32-unknown-unknown
       - name: Настроить пути Rust
         run: |
           echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
           echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Рассчитать номер релиза
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(scripts/next-release-version.sh)"
+          echo "base=$version" >> "$GITHUB_OUTPUT"
+          echo "Будет собрана версия $version."
+      - name: Проверить Rust-код
+        run: cargo test --locked
       - name: Установить Java
         uses: actions/setup-java@v6
         with:
@@ -60,52 +70,79 @@ jobs:
           sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
           echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
-      - name: Установить cargo-apk
-        run: cargo install --locked cargo-apk
-      - name: Собрать APK
-        run: bash scripts/build-android-apk.sh
-      - name: Проверить подпись APK
+      - name: Установить инструменты упаковки
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-seas-adventure.apk
-      - name: Загрузить APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: north-seas-android-apk
-          path: generated-artifacts/north-seas-adventure.apk
-          if-no-files-found: error
-          retention-days: 90
-
-  linux-packages:
-    name: Linux DEB и RPM
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Получить исходный код
-        uses: actions/checkout@v7
-      - name: Настроить Rust и WebAssembly
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - name: Настроить пути Rust
-        run: |
-          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
-          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - name: Установить wasm-pack и RPM-инструменты
-        run: |
-          cargo install --locked wasm-pack --version 0.13.1
           sudo apt-get update
-          sudo apt-get install --yes rpm
-      - name: Собрать пакеты Linux
-        run: bash scripts/build-linux-packages.sh
-      - name: Проверить пакеты
+          sudo apt-get install --yes rpm zip
+          cargo install --locked cargo-apk
+          cargo install --locked wasm-pack --version 0.13.1
+      - name: Собрать Android APK
         run: |
-          dpkg-deb --info generated-artifacts/linux/*.deb
-          rpm -qp --info generated-artifacts/linux/*.rpm
-      - name: Загрузить DEB и RPM
-        uses: actions/upload-artifact@v7
+          bash scripts/build-android-apk.sh
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-seas-adventure.apk
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          cp generated-artifacts/north-seas-adventure.apk \
+            "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-android.apk"
+      - name: Собрать Linux DEB и RPM
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.base }}
+        run: |
+          bash scripts/build-linux-packages.sh
+          deb="$(find generated-artifacts/linux -maxdepth 1 -name '*.deb' -print -quit)"
+          rpm="$(find generated-artifacts/linux -maxdepth 1 -name '*.rpm' -print -quit)"
+          test -n "$deb" && test -n "$rpm"
+          dpkg-deb --info "$deb"
+          rpm -qp --info "$rpm"
+          cp "$deb" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.deb"
+          cp "$rpm" "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-linux.rpm"
+      - name: Собрать Web-пакет
+        run: |
+          (cd artifacts/north-seas-adventure/dist/public && \
+            zip -qr "$RUNNER_TEMP/release-assets/${{ steps.version.outputs.base }}-web.zip" .)
+      - name: Настроить GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Подготовить сайт для GitHub Pages
+        uses: actions/upload-pages-artifact@v4
         with:
-          name: north-seas-linux-packages
-          path: generated-artifacts/linux/*
-          if-no-files-found: error
-          retention-days: 90
+          path: artifacts/north-seas-adventure/dist/public
+      - name: Опубликовать сайт на GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Опубликовать GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BASE: ${{ steps.version.outputs.base }}
+        run: |
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes_file" <<EOF
+          Версия релиза: \`$RELEASE_BASE\`
+
+          Идентификаторы сборок:
+          - \`$RELEASE_BASE-android\` — APK для Android.
+          - \`$RELEASE_BASE-linux\` — пакеты DEB и RPM для Linux.
+          - \`$RELEASE_BASE-web\` — WebAssembly-версия для GitHub Pages.
+          EOF
+
+          existing_state="$(gh release view "$RELEASE_BASE" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+          case "$existing_state" in
+            true)
+              gh release upload "$RELEASE_BASE" "$RUNNER_TEMP/release-assets/"* --clobber
+              gh release edit "$RELEASE_BASE" \
+                --title "$RELEASE_BASE" \
+                --notes-file "$notes_file" \
+                --target "$GITHUB_SHA" \
+                --draft=false \
+                --latest
+              ;;
+            false)
+              printf 'Релиз %s уже опубликован; новый номер должен быть рассчитан от него.\n' "$RELEASE_BASE" >&2
+              exit 1
+              ;;
+            *)
+              gh release create "$RELEASE_BASE" "$RUNNER_TEMP/release-assets/"* \
+                --title "$RELEASE_BASE" \
+                --notes-file "$notes_file" \
+                --target "$GITHUB_SHA" \
+                --latest
+              ;;
+          esac
