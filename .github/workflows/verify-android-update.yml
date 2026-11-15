@@ -49,6 +49,7 @@ jobs:
           echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_BUILD_TOOLS=$sdk_root/build-tools/36.0.0" >> "$GITHUB_ENV"
           echo "$sdk_root/emulator" >> "$GITHUB_PATH"
       - name: Рассчитать версии APK
         id: version
@@ -71,6 +72,7 @@ jobs:
       - name: Установить cargo-apk
         run: cargo install --locked cargo-apk
       - name: Подготовить постоянную подпись Android
+        id: android-signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -86,10 +88,19 @@ jobs:
             -alias androiddebugkey \
             -storetype PKCS12 \
             -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null
+          certificate_sha256="$(
+            keytool -list -v -keystore "$keystore" \
+              -alias androiddebugkey \
+              -storetype PKCS12 \
+              -storepass:env ANDROID_KEYSTORE_PASSWORD 2>/dev/null |
+              sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]'
+          )"
+          test "${#certificate_sha256}" -eq 64
           {
-            echo "CARGO_APK_DEV_KEYSTORE=$keystore"
-            echo "CARGO_APK_DEV_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEYSTORE_PATH=$keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
           } >> "$GITHUB_ENV"
+          echo "certificate_sha256=$certificate_sha256" >> "$GITHUB_OUTPUT"
       - name: Собрать APK для проверки обновления
         env:
           ANDROID_PACKAGE_VERSION: ${{ steps.version.outputs.baseline_package_version }}
@@ -102,6 +113,27 @@ jobs:
         run: |
           bash scripts/build-android-apk.sh
           cp generated-artifacts/north-sea.apk "$RUNNER_TEMP/north-sea-candidate.apk"
+      - name: Подписать оба APK постоянным ключом
+        run: |
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          for apk in \
+            "$RUNNER_TEMP/north-sea-baseline.apk" \
+            "$RUNNER_TEMP/north-sea-candidate.apk"; do
+            signed_apk="$apk.signed"
+            "$apksigner" sign \
+              --ks "$ANDROID_KEYSTORE_PATH" \
+              --ks-key-alias androiddebugkey \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --out "$signed_apk" \
+              "$apk"
+            mv -- "$signed_apk" "$apk"
+          done
+          rm -f -- "$ANDROID_KEYSTORE_PATH"
+          {
+            echo "ANDROID_KEYSTORE_PATH="
+            echo "ANDROID_KEYSTORE_PASSWORD="
+          } >> "$GITHUB_ENV"
       - name: Создать и запустить эмулятор Android
         run: |
           sdkmanager --install \
@@ -133,11 +165,11 @@ jobs:
           fi
       - name: Проверить подпись, versionCode и сохранение данных
         env:
-          ANDROID_BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/36.0.0
           ANDROID_BASELINE_APK: ${{ runner.temp }}/north-sea-baseline.apk
           ANDROID_CANDIDATE_APK: ${{ runner.temp }}/north-sea-candidate.apk
           ANDROID_BASELINE_VERSION_CODE: ${{ steps.version.outputs.baseline_code }}
           ANDROID_CANDIDATE_VERSION_CODE: ${{ steps.version.outputs.android_version_code }}
+          ANDROID_SIGNING_CERTIFICATE_SHA256: ${{ steps.android-signing.outputs.certificate_sha256 }}
         run: |
           scripts/with-rust-toolchain.sh rustc \
             --edition=2024 \

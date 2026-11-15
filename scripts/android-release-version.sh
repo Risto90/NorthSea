@@ -9,7 +9,10 @@ previous_code=16777216
 
 if [[ -n "$previous_tag" ]]; then
   previous_body="$(gh release view "$previous_tag" --json body --jq '.body')"
-  previous_code="$(sed -n 's/^Android versionCode: //p' <<< "$previous_body" | tail -n 1)"
+  previous_code="$(
+    sed -n 's/^Android versionCode: `\([0-9][0-9]*\)`$/\1/p' <<< "$previous_body" |
+      tail -n 1
+  )"
   if [[ -z "$previous_code" ]]; then
     if [[ "$previous_tag" == "0.1126.2.2" ]]; then
       previous_code=16777472

@@ -133,12 +133,19 @@ jobs:
           )"
           test "${#certificate_sha256}" -eq 64
           {
-            echo "CARGO_APK_DEV_KEYSTORE=$keystore"
-            echo "CARGO_APK_DEV_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEYSTORE_PATH=$keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
           } >> "$GITHUB_ENV"
           echo "certificate_sha256=$certificate_sha256" >> "$GITHUB_OUTPUT"
       - name: Проверить Rust-код
         run: cargo test --locked
+      - name: Проверить расчёт Android versionCode
+        run: |
+          scripts/with-rust-toolchain.sh rustc \
+            --edition=2024 \
+            --test scripts/android-release-version.rs \
+            -o "$RUNNER_TEMP/android-release-version-tests"
+          "$RUNNER_TEMP/android-release-version-tests"
       - name: Собрать Android APK
         env:
           ANDROID_PACKAGE_VERSION: ${{ steps.android-version.outputs.android_package_version }}
@@ -146,6 +153,15 @@ jobs:
           bash scripts/build-android-apk.sh
           apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           apk="$PWD/generated-artifacts/north-sea.apk"
+          signed_apk="$RUNNER_TEMP/north-sea-signed.apk"
+          "$apksigner" sign \
+            --ks "$ANDROID_KEYSTORE_PATH" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --out "$signed_apk" \
+            "$apk"
+          mv -- "$signed_apk" "$apk"
           signing_certificate="$("$apksigner" verify --print-certs "$apk" |
             sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
             tr -d ':' | tr '[:upper:]' '[:lower:]')"
@@ -155,6 +171,11 @@ jobs:
           test "$apk_version_code" = "${{ steps.android-version.outputs.android_version_code }}"
           grep -Fq "application-label:'North Sea'" <<< "$apk_badging"
           grep -Eq "application: label='North Sea' icon='res/mipmap[^']*/ic_launcher\\.png'" <<< "$apk_badging"
+          rm -f -- "$ANDROID_KEYSTORE_PATH"
+          {
+            echo "ANDROID_KEYSTORE_PATH="
+            echo "ANDROID_KEYSTORE_PASSWORD="
+          } >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/release-assets"
           cp generated-artifacts/north-sea.apk \
             "$RUNNER_TEMP/release-assets/north-sea-${{ steps.version.outputs.base }}-android.apk"

@@ -58,11 +58,6 @@ if ! command -v java >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -n "${CARGO_APK_DEV_KEYSTORE:-}" && -z "${CARGO_APK_DEV_KEYSTORE_PASSWORD:-}" ]]; then
-  printf 'Для постоянной подписи APK нужен пароль CARGO_APK_DEV_KEYSTORE_PASSWORD.\n' >&2
-  exit 1
-fi
-
 cd "$project_root"
 "$project_root/scripts/with-rust-toolchain.sh" cargo apk build \
   --lib \

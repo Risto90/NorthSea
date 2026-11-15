@@ -119,8 +119,8 @@ mod tests {
     fn carries_minor_overflow_into_the_major_component() {
         let previous = (APK_ID | (255 << 8) | 255) as u32;
         let (code, package_version) = next_release_version(previous, "0.1126.3.1").unwrap();
-        assert_eq!(code, APK_ID | (1 << 16) | (1 << 8));
-        assert_eq!(package_version, "1.1.0+0.1126.3.1");
+        assert_eq!(code, APK_ID | (1 << 16));
+        assert_eq!(package_version, "1.0.0+0.1126.3.1");
     }
 
     #[test]

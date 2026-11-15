@@ -5,7 +5,7 @@ const PACKAGE_ID: &str = "com.northseas.adventure";
 const DATA_MARKER: &str = "north-sea-upgrade-data-preserved";
 
 fn required_path(name: &str) -> PathBuf {
-    PathBuf::from(std::env::var_os(name).unwrap_or_else(|| panic!("{name} is not set")))
+    PathBuf::from(std::env::var_os(name).unwrap_or_else(|| panic!("Не задана переменная {name}")))
 }
 
 fn command_output(program: &Path, args: &[&str]) -> Output {
@@ -70,11 +70,11 @@ fn both_apks_keep_the_same_package_and_have_increasing_version_codes() {
     let baseline = required_path("ANDROID_BASELINE_APK");
     let candidate = required_path("ANDROID_CANDIDATE_APK");
     let expected_baseline: u32 = std::env::var("ANDROID_BASELINE_VERSION_CODE")
-        .expect("ANDROID_BASELINE_VERSION_CODE is not set")
+        .expect("Не задана переменная ANDROID_BASELINE_VERSION_CODE")
         .parse()
         .expect("Базовый versionCode должен быть числом");
     let expected_candidate: u32 = std::env::var("ANDROID_CANDIDATE_VERSION_CODE")
-        .expect("ANDROID_CANDIDATE_VERSION_CODE is not set")
+        .expect("Не задана переменная ANDROID_CANDIDATE_VERSION_CODE")
         .parse()
         .expect("Новый versionCode должен быть числом");
 
@@ -91,7 +91,11 @@ fn both_apks_keep_the_same_package_and_have_increasing_version_codes() {
 fn both_apks_are_signed_with_the_same_persistent_key() {
     let baseline = required_path("ANDROID_BASELINE_APK");
     let candidate = required_path("ANDROID_CANDIDATE_APK");
-    assert_eq!(certificate(&baseline), certificate(&candidate));
+    let expected = std::env::var("ANDROID_SIGNING_CERTIFICATE_SHA256")
+        .expect("Не задана переменная ANDROID_SIGNING_CERTIFICATE_SHA256")
+        .to_ascii_lowercase();
+    assert_eq!(certificate(&baseline), expected);
+    assert_eq!(certificate(&candidate), expected);
 }
 
 #[test]
@@ -101,7 +105,6 @@ fn installing_the_update_preserves_private_application_data() {
     let baseline = baseline.to_str().expect("Путь APK должен быть UTF-8");
     let candidate = candidate.to_str().expect("Путь APK должен быть UTF-8");
 
-    let _ = adb(&["uninstall", PACKAGE_ID]);
     adb(&["install", baseline]);
     adb(&[
         "shell",
