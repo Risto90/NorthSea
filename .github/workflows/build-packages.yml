@@ -129,6 +129,10 @@ jobs:
             printf 'В GitHub Secrets не настроены ANDROID_KEYSTORE_BASE64 и ANDROID_KEYSTORE_PASSWORD.\n' >&2
             exit 1
           fi
+          if [[ ! "$ANDROID_KEYSTORE_PASSWORD" =~ ^[!-~]+$ ]]; then
+            printf 'Пароль Android-хранилища должен состоять из печатных ASCII-символов.\n' >&2
+            exit 1
+          fi
           bash scripts/build-android-apk.sh
           apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           apk="$PWD/generated-artifacts/north-sea.apk"
