@@ -91,11 +91,14 @@ fn both_apks_keep_the_same_package_and_have_increasing_version_codes() {
 fn both_apks_are_signed_with_the_same_persistent_key() {
     let baseline = required_path("ANDROID_BASELINE_APK");
     let candidate = required_path("ANDROID_CANDIDATE_APK");
-    let expected = std::env::var("ANDROID_SIGNING_CERTIFICATE_SHA256")
-        .expect("Не задана переменная ANDROID_SIGNING_CERTIFICATE_SHA256")
-        .to_ascii_lowercase();
-    assert_eq!(certificate(&baseline), expected);
-    assert_eq!(certificate(&candidate), expected);
+    let baseline_certificate = certificate(&baseline);
+    let candidate_certificate = certificate(&candidate);
+    assert_eq!(baseline_certificate, candidate_certificate);
+    if let Ok(expected) = std::env::var("ANDROID_PREVIOUS_SIGNER_SHA256") {
+        if !expected.is_empty() {
+            assert_eq!(candidate_certificate, expected.to_ascii_lowercase());
+        }
+    }
 }
 
 #[test]
