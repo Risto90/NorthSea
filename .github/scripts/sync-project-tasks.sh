@@ -6,6 +6,7 @@ set -euo pipefail
 # Issue-Subtask-ID: renderer
 # Issue-Status: open|closed
 # Issue-Comment: Однострочный комментарий к задаче.
+# Issue-Discard-Number: 22 (лишний черновик после согласованного объединения)
 repo="${GITHUB_REPOSITORY:?Не задан репозиторий GitHub}"
 before="${TASKS_BEFORE:?Не задан предыдущий коммит}"
 after="${TASKS_AFTER:?Не задан текущий коммит}"
@@ -42,7 +43,14 @@ read_task_file() {
   printf '\n\n<!-- task-id:%s -->\n' "$TASK_ID" >> "$TASK_BODY_FILE"
   changed_task_ids["$TASK_ID"]=1
 
-  issue_number="$(find_issue_number "$TASK_ID")"
+  if [[ -n "$TASK_ISSUE_NUMBER" ]]; then
+    issue_number="$TASK_ISSUE_NUMBER"
+    gh api "repos/${repo}/issues/${issue_number}" --jq '.number' >/dev/null ||
+      fail "Issue #${issue_number} не найден в ${repo}"
+  else
+    issue_number="$(find_issue_number "$TASK_ID")"
+  fi
+
   if [[ -z "$issue_number" ]]; then
     url="$(gh issue create --repo "$repo" --title "$TASK_TITLE" --body-file "$TASK_BODY_FILE")"
     issue_number="${url##*/}"
@@ -60,6 +68,24 @@ read_task_file() {
   fi
 
   sync_task_subtasks "$issue_number"
+}
+
+apply_issue_discards() {
+  local message="$1"
+  local issue_number current_state
+
+  while IFS= read -r issue_number; do
+    [[ -n "$issue_number" ]] || continue
+    [[ "$issue_number" =~ ^[1-9][0-9]*$ ]] ||
+      fail "некорректный Issue-Discard-Number в описании коммита"
+    current_state="$(gh api "repos/${repo}/issues/${issue_number}" --jq '.state')"
+    if [[ "$current_state" == "open" ]]; then
+      gh issue close "$issue_number" --repo "$repo" --reason "not planned"
+      printf 'Черновик Issue #%s закрыт как неактуальный после сокращения согласованного плана\n' \
+        "$issue_number"
+    fi
+  done < <(sed -n 's/^Issue-Discard-Number:[[:space:]]*//p' <<< "$message" |
+    sed 's/[[:space:]].*$//' | tr -d '\r')
 }
 
 apply_commit_directives() {
@@ -82,7 +108,10 @@ apply_commit_directives() {
   if [[ -z "$task_id" && ( -n "$subtask_id" || -n "$status" || -n "$comment" || "$status_count" -gt 0 || "$comment_count" -gt 0 ) ]]; then
     fail "директивам статуса или комментария нужен Issue-Task-ID в коммите ${commit}"
   fi
-  [[ -n "$task_id" ]] || return 0
+  if [[ -z "$task_id" ]]; then
+    apply_issue_discards "$message"
+    return 0
+  fi
   [[ "$task_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "некорректный Issue-Task-ID в коммите ${commit}"
   if [[ "$subtask_count" -gt 0 ]]; then
     [[ -n "$subtask_id" ]] || fail "Issue-Subtask-ID не должен быть пустым в коммите ${commit}"
@@ -119,6 +148,7 @@ apply_commit_directives() {
     gh issue comment "$issue_number" --repo "$repo" --body "$comment"
     printf 'Добавлен комментарий к Issue #%s\n' "$issue_number"
   fi
+  apply_issue_discards "$message"
 }
 
 process_changed_files() {
