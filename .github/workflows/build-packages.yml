@@ -51,6 +51,24 @@ jobs:
           version="$(scripts/next-release-version.sh)"
           echo "base=$version" >> "$GITHUB_OUTPUT"
           echo "Будет собрана версия $version."
+      - name: Рассчитать Android versionCode
+        id: android-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version_data="$(bash scripts/android-release-version.sh '${{ steps.version.outputs.base }}')"
+          IFS=$'\t' read -r previous_tag previous_code android_version_code android_package_version baseline_code baseline_package_version \
+            <<< "$version_data"
+          test -n "$previous_code"
+          test -n "$android_version_code"
+          test -n "$android_package_version"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "previous_code=$previous_code" >> "$GITHUB_OUTPUT"
+          echo "android_version_code=$android_version_code" >> "$GITHUB_OUTPUT"
+          echo "android_package_version=$android_package_version" >> "$GITHUB_OUTPUT"
+          echo "baseline_code=$baseline_code" >> "$GITHUB_OUTPUT"
+          echo "baseline_package_version=$baseline_package_version" >> "$GITHUB_OUTPUT"
+          echo "Для релиза будет versionCode $android_version_code."
       - name: Установить Java
         uses: actions/setup-java@v6
         with:
@@ -89,13 +107,52 @@ jobs:
             cpio
           cargo install --locked cargo-apk
           cargo install --locked wasm-pack --version 0.13.1
+      - name: Подготовить постоянную подпись Android
+        id: android-signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" ]]; then
+            printf 'В GitHub Secrets не настроены ANDROID_KEYSTORE_BASE64 и ANDROID_KEYSTORE_PASSWORD.\n' >&2
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/north-sea-release.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          keytool -list -keystore "$keystore" \
+            -alias androiddebugkey \
+            -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null
+          certificate_sha256="$(
+            keytool -list -v -keystore "$keystore" \
+              -alias androiddebugkey \
+              -storetype PKCS12 \
+              -storepass:env ANDROID_KEYSTORE_PASSWORD 2>/dev/null |
+              sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]'
+          )"
+          test "${#certificate_sha256}" -eq 64
+          {
+            echo "CARGO_APK_DEV_KEYSTORE=$keystore"
+            echo "CARGO_APK_DEV_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "certificate_sha256=$certificate_sha256" >> "$GITHUB_OUTPUT"
       - name: Проверить Rust-код
         run: cargo test --locked
       - name: Собрать Android APK
+        env:
+          ANDROID_PACKAGE_VERSION: ${{ steps.android-version.outputs.android_package_version }}
         run: |
           bash scripts/build-android-apk.sh
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify generated-artifacts/north-sea.apk
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          apk="$PWD/generated-artifacts/north-sea.apk"
+          signing_certificate="$("$apksigner" verify --print-certs "$apk" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+            tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$signing_certificate" = "${{ steps.android-signing.outputs.certificate_sha256 }}"
           apk_badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging generated-artifacts/north-sea.apk)"
+          apk_version_code="$(sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p" <<< "$apk_badging")"
+          test "$apk_version_code" = "${{ steps.android-version.outputs.android_version_code }}"
           grep -Fq "application-label:'North Sea'" <<< "$apk_badging"
           grep -Eq "application: label='North Sea' icon='res/mipmap[^']*/ic_launcher\\.png'" <<< "$apk_badging"
           mkdir -p "$RUNNER_TEMP/release-assets"
@@ -160,11 +217,18 @@ jobs:
           notes_file="$RUNNER_TEMP/release-notes.md"
           cat > "$notes_file" <<EOF
           Версия релиза: \`$RELEASE_BASE\`
+          Android versionCode: \`${{ steps.android-version.outputs.android_version_code }}\`
 
           Идентификаторы сборок:
           - \`$RELEASE_BASE-android\` — APK для Android.
           - \`$RELEASE_BASE-linux\` — пакеты DEB и RPM для Linux.
           EOF
+          if [[ '${{ steps.android-version.outputs.previous_tag }}' == "0.1126.2.2" ]]; then
+            cat >> "$notes_file" <<'EOF'
+
+          Для перехода с прежних APK сначала удалите старую установку: она подписана другим временным ключом. Удаление может стереть локальные данные. Последующие версии будут обновляться с сохранением данных.
+          EOF
+          fi
 
           existing_state="$(gh release view "$RELEASE_BASE" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
           case "$existing_state" in

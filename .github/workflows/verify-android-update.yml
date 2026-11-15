@@ -1,0 +1,146 @@
+name: Проверить обновление Android APK
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-android-update
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Собрать APK и проверить установку обновления
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Настроить Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Настроить пути Rust
+        run: |
+          echo "CARGO_HOME=$HOME/.cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$HOME/.rustup" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Установить Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Настроить Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ""
+      - name: Установить Android SDK, эмулятор и NDK
+        run: |
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018" \
+            "emulator" \
+            "system-images;android-36;google_apis;x86_64"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$sdk_root/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "$sdk_root/emulator" >> "$GITHUB_PATH"
+      - name: Рассчитать версии APK
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="$(scripts/next-release-version.sh)"
+          version_data="$(bash scripts/android-release-version.sh "$base")"
+          IFS=$'\t' read -r previous_tag previous_code android_version_code android_package_version baseline_code baseline_package_version \
+            <<< "$version_data"
+          {
+            echo "base=$base"
+            echo "previous_tag=$previous_tag"
+            echo "previous_code=$previous_code"
+            echo "baseline_code=$baseline_code"
+            echo "baseline_package_version=$baseline_package_version"
+            echo "android_version_code=$android_version_code"
+            echo "android_package_version=$android_package_version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Установить cargo-apk
+        run: cargo install --locked cargo-apk
+      - name: Подготовить постоянную подпись Android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" ]]; then
+            printf 'В GitHub Secrets не настроены ANDROID_KEYSTORE_BASE64 и ANDROID_KEYSTORE_PASSWORD.\n' >&2
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/north-sea-release.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          keytool -list -keystore "$keystore" \
+            -alias androiddebugkey \
+            -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null
+          {
+            echo "CARGO_APK_DEV_KEYSTORE=$keystore"
+            echo "CARGO_APK_DEV_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Собрать APK для проверки обновления
+        env:
+          ANDROID_PACKAGE_VERSION: ${{ steps.version.outputs.baseline_package_version }}
+        run: |
+          bash scripts/build-android-apk.sh
+          cp generated-artifacts/north-sea.apk "$RUNNER_TEMP/north-sea-baseline.apk"
+      - name: Собрать следующий APK
+        env:
+          ANDROID_PACKAGE_VERSION: ${{ steps.version.outputs.android_package_version }}
+        run: |
+          bash scripts/build-android-apk.sh
+          cp generated-artifacts/north-sea.apk "$RUNNER_TEMP/north-sea-candidate.apk"
+      - name: Создать и запустить эмулятор Android
+        run: |
+          sdkmanager --install \
+            "emulator" \
+            "system-images;android-36;google_apis;x86_64"
+          printf 'no\n' | avdmanager create avd \
+            --force \
+            --name north-sea-test \
+            --package "system-images;android-36;google_apis;x86_64" \
+            --device pixel_2
+          emulator -avd north-sea-test \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -no-snapshot \
+            -gpu swiftshader_indirect \
+            > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
+          adb wait-for-device
+          for attempt in $(seq 1 60); do
+            if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" != "1" ]]; then
+            cat "$RUNNER_TEMP/android-emulator.log" >&2
+            printf 'Эмулятор Android не завершил запуск.\n' >&2
+            exit 1
+          fi
+      - name: Проверить подпись, versionCode и сохранение данных
+        env:
+          ANDROID_BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/36.0.0
+          ANDROID_BASELINE_APK: ${{ runner.temp }}/north-sea-baseline.apk
+          ANDROID_CANDIDATE_APK: ${{ runner.temp }}/north-sea-candidate.apk
+          ANDROID_BASELINE_VERSION_CODE: ${{ steps.version.outputs.baseline_code }}
+          ANDROID_CANDIDATE_VERSION_CODE: ${{ steps.version.outputs.android_version_code }}
+        run: |
+          scripts/with-rust-toolchain.sh rustc \
+            --edition=2024 \
+            --test scripts/test-android-update.rs \
+            -o "$RUNNER_TEMP/test-android-update"
+          "$RUNNER_TEMP/test-android-update" --test-threads=1 --nocapture

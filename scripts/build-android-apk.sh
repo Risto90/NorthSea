@@ -9,6 +9,28 @@ if [[ "$target_directory" != /* ]]; then
 fi
 export CARGO_TARGET_DIR="$target_directory"
 
+manifest_backup_directory=""
+restore_manifest() {
+  if [[ -n "$manifest_backup_directory" ]]; then
+    cp -- "$manifest_backup_directory/Cargo.toml" "$project_root/Cargo.toml"
+    cp -- "$manifest_backup_directory/Cargo.lock" "$project_root/Cargo.lock"
+    rm -rf -- "$manifest_backup_directory"
+  fi
+}
+trap restore_manifest EXIT
+
+if [[ -n "${ANDROID_PACKAGE_VERSION:-}" ]]; then
+  if [[ ! "$ANDROID_PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+\.[0-9]{4}\.[0-9]+\.[1-9][0-9]*$ ]]; then
+    printf 'ANDROID_PACKAGE_VERSION должен быть версией SemVer с номером релиза в метаданных.\n' >&2
+    exit 1
+  fi
+  manifest_backup_directory="$(mktemp -d)"
+  cp -- "$project_root/Cargo.toml" "$manifest_backup_directory/Cargo.toml"
+  cp -- "$project_root/Cargo.lock" "$manifest_backup_directory/Cargo.lock"
+  sed -i "0,/^version = /{s|^version = .*|version = \"$ANDROID_PACKAGE_VERSION\"|}" \
+    "$project_root/Cargo.toml"
+fi
+
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$project_root/.local/toolchains/android-sdk}}"
 unset ANDROID_SDK_ROOT
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$project_root/.local/toolchains/android-ndk-r30}"
@@ -33,6 +55,11 @@ fi
 
 if ! command -v java >/dev/null 2>&1; then
   printf 'Для сборки APK требуется Java, но команда java не найдена.\n' >&2
+  exit 1
+fi
+
+if [[ -n "${CARGO_APK_DEV_KEYSTORE:-}" && -z "${CARGO_APK_DEV_KEYSTORE_PASSWORD:-}" ]]; then
+  printf 'Для постоянной подписи APK нужен пароль CARGO_APK_DEV_KEYSTORE_PASSWORD.\n' >&2
   exit 1
 fi
 
